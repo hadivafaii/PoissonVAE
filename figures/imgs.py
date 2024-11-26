@@ -1,0 +1,129 @@
+from utils.plotting import *
+
+
+def plot_weights(
+		w: np.ndarray,
+		nrows: int = 16,
+		method: str = 'min-max',
+		title: str = None,
+		display: bool = True,
+		**kwargs, ):
+	defaults = dict(
+		dpi=160,
+		figsize=(8, 4),
+		title_fontsize=8,
+		title_y=1.01,
+		vmin=None,
+		vmax=None,
+		cmap=None,
+	)
+	kwargs = setup_kwargs(defaults, kwargs)
+
+	# make grid
+	kws_grid = filter_kwargs(make_grid, kwargs)
+	ncols = int(np.ceil(len(w) / nrows))
+	grid_dec = make_grid(
+		x=w,
+		grid_size=(nrows, ncols),
+		normalize=True if
+		method != 'none'
+		else False,
+		method=method,
+		**kws_grid,
+	)
+	# plot
+	fig, ax = create_figure(
+		figsize=kwargs['figsize'],
+		dpi=kwargs['dpi'],
+		layout='tight',
+	)
+	if method == 'min-max':
+		vmin, vmax = 0, 1
+		cmap = kwargs['cmap'] or 'Greys_r'
+	elif method == 'abs-max':
+		vmin, vmax = -1, 1
+		cmap = kwargs['cmap'] or rd_or_bu()
+	elif method == 'none':
+		vmin, vmax = None, None
+		cmap = kwargs['cmap'] or 'Greys_r'
+	else:
+		raise ValueError(method)
+	kws_show = dict(
+		vmin=kwargs['vmin'] or vmin,
+		vmax=kwargs['vmax'] or vmax,
+		cmap=kwargs['cmap'] or cmap,
+	)
+	ax.imshow(grid_dec, **kws_show)
+	ax.set_title(
+		label=title,
+		fontsize=kwargs['title_fontsize'],
+		y=kwargs['title_y'],
+	)
+	remove_ticks(ax)
+	if display:
+		plt.show()
+	else:
+		plt.close()
+	return fig, ax
+
+
+def make_grid(
+		x: Union[np.ndarray, torch.Tensor],
+		grid_size: Union[int, Tuple[int, int]],
+		scaling: Sequence[float] = None,
+		pad: int = 1,
+		pad_val: float = np.nan,
+		normalize: bool = True,
+		**kwargs, ):
+	x = tonp(x)
+	if x.ndim == 4:
+		x = x[:, 0, ...]
+	b, h, w = x.shape
+
+	if scaling is None:
+		scaling = [1.0] * b
+	assert len(scaling) == b
+
+	if isinstance(grid_size, int):
+		grid_size = (grid_size, grid_size)
+	n_rows, n_cols = grid_size
+
+	grid = np.ones((
+		(h + pad) * n_rows - pad,
+		(w + pad) * n_cols - pad,
+	)) * pad_val
+
+	for idx in range(min(n_rows * n_cols, b)):
+		i = idx // n_cols
+		j = idx % n_cols
+		a = (h + pad) * i
+		b = (w + pad) * j
+
+		y = x[idx]
+		if normalize:
+			y = normalize_img(
+				y, **kwargs)
+		y *= scaling[idx]  # apply manual scaling
+		grid[a:a + h, b:b + w] = y
+
+	return grid
+
+
+def normalize_img(
+		x: np.ndarray,
+		method: str = 'min-max',
+		val_range: Tuple[float, float] = (0, 1), ):
+	if method == 'min-max':
+		xmin = np.min(x)
+		xmax = np.max(x)
+		x_nrm = (x - xmin) / (xmax - xmin)
+
+		a, b = min(val_range), max(val_range)
+		x_nrm = x_nrm * (b - a) + a
+
+	elif method == 'abs-max':
+		x_nrm = x / np.max(np.abs(x))
+	else:
+		raise ValueError(method)
+
+	return x_nrm
