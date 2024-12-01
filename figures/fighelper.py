@@ -1,6 +1,4 @@
 from utils.plotting import *
-from analysis.helper import vel2polar
-from matplotlib.gridspec import GridSpec
 
 
 def get_betas(df: pd.DataFrame):

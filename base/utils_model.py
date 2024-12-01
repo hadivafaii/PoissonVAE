@@ -1,5 +1,5 @@
 from utils.plotting import *
-from vae.config_vae import *
+from main.config_vae import *
 from torch import distributions as dists
 
 
@@ -88,31 +88,6 @@ class AverageMeter(object):
 		self.avg = self.sum / self.cnt
 
 
-def print_num_params(module: nn.Module):
-	t = PrettyTable(['Module Name', 'Num Params'])
-	for name, m in module.named_modules():
-		tot = sum(
-			p.numel() for p
-			in m.parameters()
-			if p.requires_grad
-		)
-		if tot == 0:
-			continue
-		if tot // 1e6 > 0:
-			tot = f"{np.round(tot / 1e6, 2):1.1f} Mil"
-		elif tot // 1e3 > 0:
-			tot = f"{np.round(tot / 1e3, 2):1.1f} K"
-
-		if '.' not in name:
-			if isinstance(m, type(module)):
-				t.add_row([m.__class__.__name__, tot])
-				t.add_row(['---', '---'])
-			else:
-				t.add_row([name, tot])
-	print(t, '\n')
-	return
-
-
 def load_quick(s: str, lite: bool, **kwargs):
 	if lite:
 		tr, meta = load_model_lite(s, **kwargs)
@@ -146,7 +121,7 @@ def load_model_lite(
 	)
 	# load cfg/model
 	cfg = CFG_CLASSES[key](**cfg)
-	from vae.vae import MODEL_CLASSES
+	from main.vae import MODEL_CLASSES
 	model = MODEL_CLASSES[key](
 		cfg, verbose=verbose)
 
@@ -181,7 +156,7 @@ def load_model_lite(
 	with open(cfg_train, 'r') as f:
 		cfg_train = json.load(f)
 	if fname.endswith('VAE'):
-		from vae.train_vae import TrainerVAE
+		from main.train_vae import TrainerVAE
 		cfg_train = ConfigTrainVAE(**cfg_train)
 		trainer = TrainerVAE(
 			model=model,
@@ -242,7 +217,7 @@ def load_model(
 	)
 	# load cfg/model
 	cfg = CFG_CLASSES[key](**cfg)
-	from vae.vae import MODEL_CLASSES
+	from main.vae import MODEL_CLASSES
 	model = MODEL_CLASSES[key](
 		cfg, verbose=verbose)
 
@@ -295,7 +270,7 @@ def load_model(
 		cfg_train = json.load(f)
 	fname = fname.split('.')[0]
 	if fname == 'ConfigTrainVAE':
-		from vae.train_vae import TrainerVAE
+		from main.train_vae import TrainerVAE
 		cfg_train = ConfigTrainVAE(**cfg_train)
 		trainer = TrainerVAE(
 			model=model,
@@ -361,9 +336,6 @@ class Module(nn.Module):
 		self.chkpt_dir = None
 		self.timestamp = now(True)
 		self.verbose = verbose
-
-	def print(self):
-		print_num_params(self)
 
 	def create_chkpt_dir(self, fit_name: str = None):
 		chkpt_dir = '_'.join([

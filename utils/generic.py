@@ -3,13 +3,13 @@ import os
 import json
 import h5py
 import torch
+import shutil
 import pickle
 import joblib
-import shutil
 import random
-import pathlib
 import inspect
 import logging
+import pathlib
 import argparse
 import warnings
 import operator
@@ -19,62 +19,12 @@ import collections
 import numpy as np
 import pandas as pd
 from torch import nn
-from rich import print
-from scipy import fft as sp_fft
-from scipy import signal as sp_sig
-from scipy import linalg as sp_lin
 from scipy import stats as sp_stats
-from scipy import ndimage as sp_img
-from scipy import optimize as sp_optim
-from scipy.spatial import distance as sp_dist
-from scipy.spatial.transform import Rotation
-from sklearn.preprocessing import Normalizer
-from numpy.ma import masked_where as mwh
 from torch.nn import functional as F
-from prettytable import PrettyTable
 from os.path import join as pjoin
 from datetime import datetime
 from tqdm import tqdm
 from typing import *
-
-
-def divide_list(lst: list, n: int):
-	k, m = divmod(len(lst), n)
-	lst_divided = [
-		lst[
-			i * k + min(i, m):
-			(i + 1) * k + min(i + 1, m)
-		] for i in range(n)
-	]
-	return lst_divided
-
-
-def shift_rescale(
-	x: np.ndarray,
-	loc: np.ndarray,
-	scale: np.ndarray,
-	fwd: bool = True, ):
-	assert x.ndim == loc.ndim == scale.ndim
-	return (x - loc) / scale if fwd else x * scale + loc
-
-
-def interp(
-	xi: Union[np.ndarray, torch.Tensor],
-	xf: Union[np.ndarray, torch.Tensor],
-	steps: int = 16, ):
-	assert steps >= 2
-	assert xi.shape == xf.shape
-	shape = (steps, *xi.shape)
-	if isinstance(xi, np.ndarray):
-		x = np.empty(shape)
-	elif isinstance(xi, torch.Tensor):
-		x = torch.empty(shape)
-	else:
-		raise RuntimeError(type(xi))
-	d = (xf - xi) / (steps - 1)
-	for i in range(steps):
-		x[i] = xi + i * d
-	return x
 
 
 def true_fn(s: str):  # used as argparse type
@@ -83,11 +33,6 @@ def true_fn(s: str):  # used as argparse type
 
 def placeholder_fn(val, expected_type):  # used as argparse type
 	return val if val == '__placeholder__' else expected_type(val)
-
-
-def escape_parenthesis(fit_name: str):
-	for s in fit_name.split('/'):
-		print(s.replace('(', '\(').replace(')', '\)'))
 
 
 def tonp(x: Union[torch.Tensor, np.ndarray]):
@@ -99,19 +44,18 @@ def tonp(x: Union[torch.Tensor, np.ndarray]):
 		raise ValueError(type(x).__name__)
 
 
-def flat_cat(
-		x_list: List[torch.Tensor],
-		start_dim: int = 1,
-		end_dim: int = -1,
-		cat_dim: int = 1):
-	x = [
-		e.flatten(
-			start_dim=start_dim,
-			end_dim=end_dim,
-		) for e in x_list
-	]
-	x = torch.cat(x, dim=cat_dim)
-	return x
+def int_from_str(s: str) -> int:
+	matches = re.search(r"\d+", s)
+	return int(matches.group())
+
+
+def alphanum_sort_key(string: str):
+	pat = r'^(.*?)([0-9]*\.?[0-9]+)([^0-9]*)$'
+	match = re.match(pat, string)
+	if match:
+		prefix, number, suffix = match.groups()
+		return prefix, float(number), suffix
+	return string, 0, ''
 
 
 def flatten_np(
@@ -128,35 +72,6 @@ def flatten_np(
 	middle = np.prod(shape[start_dim:end_dim+1])
 	shape = (*prefix, middle, *suffix)
 	return x.reshape(shape)
-
-
-def flatten_arr(
-		x: np.ndarray,
-		ndim_end: int = 1,
-		ndim_start: int = 0, ):
-	shape = x.shape
-	assert 0 <= ndim_end <= len(shape)
-	assert 0 <= ndim_start <= len(shape)
-	if ndim_end + ndim_start >= len(shape):
-		return x
-
-	shape_flat = shape[:ndim_start] + (-1,)
-	for i, d in enumerate(shape):
-		if i >= len(shape) - ndim_end:
-			shape_flat += (d,)
-	return x.reshape(shape_flat)
-
-
-def avg(
-		x: np.ndarray,
-		ndim_end: int = 2,
-		ndim_start: int = 0,
-		fn: Callable = np.nanmean, ) -> np.ndarray:
-	dims = range(ndim_start, x.ndim - ndim_end)
-	dims = sorted(dims, reverse=True)
-	for axis in dims:
-		x = fn(x, axis=axis)
-	return x
 
 
 def cat_map(x: list, axis: int = 0):
@@ -177,42 +92,6 @@ def get_tval(
 	if two_sided:
 		ci = (1 + ci) / 2
 	return sp_stats.t.ppf(ci, dof)
-
-
-def contig_segments(mask: np.ndarray):
-	censored = np.where(mask == 0)[0]
-	looper = itertools.groupby(
-		enumerate(censored),
-		lambda t: t[0] - t[1],
-	)
-	segments = []
-	for k, g in looper:
-		s = map(operator.itemgetter(1), g)
-		segments.append(list(s))
-	return segments
-
-
-def unique_idxs(
-		obj: np.ndarray,
-		filter_zero: bool = True, ):
-	idxs = pd.DataFrame(obj.flat)
-	idxs = idxs.groupby([0]).indices
-	if filter_zero:
-		idxs.pop(0, None)
-	return idxs
-
-
-def all_equal(iterable):
-	g = itertools.groupby(iterable)
-	return next(g, True) and not next(g, False)
-
-
-def np_nans(shape: Union[int, Iterable[int]]):
-	if isinstance(shape, np.ndarray):
-		shape = shape.shape
-	arr = np.empty(shape, dtype=float)
-	arr[:] = np.nan
-	return arr
 
 
 def make_logger(
@@ -432,20 +311,6 @@ def find_critical_ids(mask: np.ndarray):
 			break
 
 	return first_zero, last_zero
-
-
-def base2(number: int):
-	b = np.base_repr(number, base=2)
-	if len(b) == 1:
-		return 0, 0, int(b)
-	elif len(b) == 2:
-		j, k = b
-		return 0, int(j), int(k)
-	elif len(b) == 3:
-		i, j, k = b
-		return int(i), int(j), int(k)
-	else:
-		return b
 
 
 def time_dff_string(start: str, stop: str):

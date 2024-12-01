@@ -1,0 +1,1 @@
+./fit_vae.sh '0' 'vH16' 'poisson' 'conv+b|lin' --seed 1 --kl_beta 1.0 --comment b1 && ./fit_vae.sh '0' 'vH16' 'poisson' 'conv+b|lin' --seed 2 --kl_beta 1.0 --comment b1 && ./fit_vae.sh '0' 'vH16' 'poisson' 'conv+b|lin' --seed 3 --kl_beta 1.0 --comment b1

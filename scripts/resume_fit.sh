@@ -19,11 +19,11 @@ fi
 shift 3
 args="${*}"
 
-root="Dropbox/git/_PoissonVAE"
+root="Dropbox/git/PoissonVAE"
 root="${HOME}/${root}"
 cd "${root}" || exit
 
-cmd="python3 -m vae.resume_train \
+cmd="python3 -m main.resume_train \
   '${device}' \
   '${model_name}' \
   '${fit_name}' \

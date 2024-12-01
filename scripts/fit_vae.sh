@@ -23,11 +23,11 @@ fi
 shift 4
 args="${*}"
 
-root="Dropbox/git/_PoissonVAE"
+root="Dropbox/git/PoissonVAE"
 root="${HOME}/${root}"
 cd "${root}" || exit
 
-fit="python3 -m vae.train_vae \
+fit="python3 -m main.train_vae \
   '${device}' \
   '${dataset}' \
   '${model}' \

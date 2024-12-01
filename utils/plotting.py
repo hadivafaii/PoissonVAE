@@ -2,10 +2,25 @@ from .generic import *
 import matplotlib
 import seaborn as sns
 from matplotlib import pyplot as plt
-# from matplotlib.patches import PathPatch
-# from matplotlib.path import Path as mpl_Path
 from matplotlib.backends.backend_pdf import FigureCanvasPdf, PdfPages
 from matplotlib.colors import to_rgb, rgb2hex, Colormap, LinearSegmentedColormap
+
+
+def imshow(*args, **kwargs):
+	args = (tonp(args[0]).squeeze(), *args[1:])
+	return plt.imshow(*args, **kwargs)
+
+
+def plot(*args, **kwargs):
+	args = (tonp(args[0]).squeeze(), *args[1:])
+	return plt.plot(*args, **kwargs)
+
+
+def histplot(*args, **kwargs):
+	kwargs.setdefault('element', 'step')
+	kwargs.setdefault('fill', False)
+	args = (tonp(args[0]), *args[1:])
+	return sns.histplot(*args, **kwargs)
 
 
 def make_ticks(
@@ -235,6 +250,23 @@ def make_cmap(
 	if show:
 		display_cmap(color_ramp, len(hex_colors))
 	return color_ramp
+
+
+def get_cubehelix_palette(n_colors: int, **kwargs):
+	defaults = dict(
+		start=2.5,
+		rot=0.3,
+		gamma=1.0,
+		hue=0.9,
+		light=0.85,
+		dark=0.15,
+		reverse=False,
+		as_cmap=False,
+	)
+	kwargs = setup_kwargs(defaults, kwargs)
+	pal = sns.cubehelix_palette(
+		n_colors=n_colors, **kwargs)
+	return pal
 
 
 # noinspection PyTypeChecker

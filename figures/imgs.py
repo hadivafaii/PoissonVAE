@@ -2,7 +2,7 @@ from utils.plotting import *
 
 
 def plot_weights(
-		w: np.ndarray,
+		w: np.ndarray | torch.Tensor,
 		nrows: int = 16,
 		method: str = 'min-max',
 		title: str = None,
@@ -22,12 +22,12 @@ def plot_weights(
 	# make grid
 	kws_grid = filter_kwargs(make_grid, kwargs)
 	ncols = int(np.ceil(len(w) / nrows))
-	grid_dec = make_grid(
+	grid = make_grid(
 		x=w,
 		grid_size=(nrows, ncols),
-		normalize=True if
-		method != 'none'
-		else False,
+		normalize=False if
+		method == 'none'
+		else True,
 		method=method,
 		**kws_grid,
 	)
@@ -53,7 +53,7 @@ def plot_weights(
 		vmax=kwargs['vmax'] or vmax,
 		cmap=kwargs['cmap'] or cmap,
 	)
-	ax.imshow(grid_dec, **kws_show)
+	ax.imshow(grid, **kws_show)
 	ax.set_title(
 		label=title,
 		fontsize=kwargs['title_fontsize'],
@@ -68,17 +68,19 @@ def plot_weights(
 
 
 def make_grid(
-		x: Union[np.ndarray, torch.Tensor],
-		grid_size: Union[int, Tuple[int, int]],
+		x: np.ndarray | torch.Tensor,
+		grid_size: int | Tuple[int, int],
 		scaling: Sequence[float] = None,
 		pad: int = 1,
 		pad_val: float = np.nan,
 		normalize: bool = True,
 		**kwargs, ):
 	x = tonp(x)
-	if x.ndim == 4:
-		x = x[:, 0, ...]
-	b, h, w = x.shape
+	if x.ndim == 3:
+		x = x[:, np.newaxis]
+	assert x.ndim == 4
+	x = x.transpose(0, 2, 3, 1)
+	b, h, w, c = x.shape
 
 	if scaling is None:
 		scaling = [1.0] * b
@@ -91,6 +93,7 @@ def make_grid(
 	grid = np.ones((
 		(h + pad) * n_rows - pad,
 		(w + pad) * n_cols - pad,
+		c,
 	)) * pad_val
 
 	for idx in range(min(n_rows * n_cols, b)):
@@ -116,7 +119,10 @@ def normalize_img(
 	if method == 'min-max':
 		xmin = np.min(x)
 		xmax = np.max(x)
-		x_nrm = (x - xmin) / (xmax - xmin)
+
+		numen = x - xmin
+		denum = xmax - xmin
+		x_nrm = numen / denum
 
 		a, b = min(val_range), max(val_range)
 		x_nrm = x_nrm * (b - a) + a

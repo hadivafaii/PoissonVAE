@@ -58,7 +58,7 @@ def copy_fitted_model(
 
 def copy_checkpoints(
 		dst: str = 'Dropbox/chkpts/PoissonVAE',
-		src: str = 'Dropbox/git/_PoissonVAE/logs',
+		src: str = 'Dropbox/git/PoissonVAE/logs',
 		pattern: str = "[INFO] Checkpoint Directory:",
 		recursive: bool = False, ):
 	dst, src = map(add_home, [dst, src])
@@ -106,7 +106,7 @@ def _setup_args() -> argparse.Namespace:
 	parser.add_argument(
 		"--src",
 		help='where .txt log files are saved',
-		default='Dropbox/git/_PoissonVAE/logs',
+		default='Dropbox/git/PoissonVAE/logs',
 		type=str,
 	)
 	parser.add_argument(

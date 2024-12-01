@@ -1,11 +1,4 @@
 from utils.plotting import *
-from sklearn import metrics as sk_metric
-from sklearn import neighbors as sk_neigh
-from sklearn import inspection as sk_inspect
-from sklearn import linear_model as sk_linear
-from sklearn import decomposition as sk_decomp
-from sklearn import model_selection as sk_modselect
-from statsmodels.stats.multitest import multipletests
 
 
 def model2key(model_type: str):
