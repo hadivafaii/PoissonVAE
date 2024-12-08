@@ -1,8 +1,8 @@
 ## The Official PyTorch Implementation of "Poisson Variational Autoencoder" ([NeurIPS 2024 Spotlight Paper](https://openreview.net/forum?id=ektPEcqGLb))
 
-Welcome to the *"Poisson Variational Autoencoder"* (P-VAE) codebas! P-VAE is a brain-inspired generative model that unifies major theories in neuroscience with modern machine learning.
+Welcome to the *"Poisson Variational Autoencoder"* (P-VAE) codebase! P-VAE is a brain-inspired generative model that unifies major theories in neuroscience with modern machine learning.
 
-![Graphical Abstract](./media/grphical-abstract.png)
+![Graphical Abstract](./media/graphical-abstract.png)
 
 When trained on whitened natural image patches, the P-VAE learns sparse, "Gabor-like" features.
 
