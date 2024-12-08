@@ -4,19 +4,26 @@ Welcome to the *"Poisson Variational Autoencoder"* (P-VAE) codebas! P-VAE is a b
 
 ![Graphical Abstract](./media/grphical-abstract.png)
 
-When trained on whitened natural image patches, the P-VAE learns "Gabor-like" features.
+When trained on whitened natural image patches, the P-VAE learns sparse, "Gabor-like" features.
 
 ![Animation](./media/animation.gif)
 
-This is significant, because if you stick an electrode in the primary visual cortex and record from real neurons, this is the kind of selecivity you would observe. The P-VAE never sees data from real neurons, yet, it develops a similar selectivity in a purely unsupervised way.
+This is significant because if you stick an electrode into the primary visual cortex and record from actual neurons, this is the type of selectivity you would observe. Remarkably, the P-VAE develops a similar selectivity in a purely unsupervised manner, despite never being exposed to data from real neurons.
 
 ## 1. Code Structure
 
 - **`./main/`**: Full architecture and training code for all four VAEs, including the P-VAE, reproducing paper results.
-- **`./pvae/`**: Minimal PyTorch Lightning implementation of the P-VAE. A great starting point for understanding the model.
 - **`./base/distributions.py`**: Distributions used in the paper, including Poisson with our novel reparameterization algorithm.
 - **`./analysis/`**: Data analysis and result generation code.
 - **`./scripts/`**: Model fitting scripts (examples below).
+
+### Stand-alone PyTorch Lightning Implementation
+
+We also provide a minimal PyTorch Lightning implementation of the P-VAE, stripped down to its essential components. This serves as an excellent starting point for understanding the model. Check it out:
+
+<a target="_blank" href="https://colab.research.google.com/drive/1PBeAv-3kcrwrSBKzRxDCcDiaxyC0-8Xv?usp=sharing">
+  <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
+</a>
 
 
 ## 2. Training a VAE
@@ -34,7 +41,7 @@ cd scripts/
 - **`<model>`**: `str`, choices = `{'poisson', 'categorical', 'gaussian', 'laplace'}`.
 - **`<archi>`**: `str`, architecture format = `{'lin|lin', 'conv+b|lin', 'conv+b|conv+b'}` (interpreted as `enc|dec`).
 
-In the paper, we refer to `'vH16'` and `'CIFAR16'` options as "van Hateren" and "$\text{CIFAR}_{16 \times 16}$", respectively. In earlier versions of the code, the van Hateren dataset was also called DOVES, so vH16, van Hateren, and DOVES are interchangeable.
+In the paper, we refer to `'vH16'` and `'CIFAR16'` options as "van Hateren" and "CIFAR_16x16", respectively. In earlier versions of the code, the van Hateren dataset was also called DOVES. Therefore, vH16, van Hateren, and DOVES are interchangeable.
 
 See `./main/train_vae.py` for additional arguments. For example, you can set latent dimensionality to $K = 1024$, and KL/reconstruction trade-off to $\beta = 2.5$, like this:
 
@@ -66,7 +73,7 @@ Download the processed datasets from the following links:
 - Complete folder: [Drive Link](https://drive.google.com/drive/folders/1mCrsYtxcbNODcCTCLdaTi5v8yN_n5AMA?usp=sharing).
 - Or individual datasets:
     1. [van Hateren](https://drive.google.com/drive/folders/1zaQPZm-8LhRXA24wMj4JeJf3s7Z0iIkM?usp=sharing).
-    2. [$\text{CIFAR}_{16 \times 16}$](https://drive.google.com/drive/folders/1q0TAKHxaEfRfU0YwgykD8TTiYhCpZ400?usp=sharing).
+    2. [CIFAR_16x16](https://drive.google.com/drive/folders/1q0TAKHxaEfRfU0YwgykD8TTiYhCpZ400?usp=sharing).
     3. [MNIST](https://drive.google.com/drive/folders/1WQVqoUU1vbNTs4fd5jgA3zZR1j_XN3cC?usp=sharing).
 
 Place the downloaded data under **`~/Datasets/`** with the following structure:

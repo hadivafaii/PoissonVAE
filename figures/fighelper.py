@@ -10,6 +10,7 @@ def get_betas(df: pd.DataFrame):
 	return betas
 
 
+# noinspection PyTypeChecker
 def get_palette():
 	# poisson
 	betas = [0.01, 0.2, 0.4, 0.6, 0.8, 1.0, 1.5, 4.0]
