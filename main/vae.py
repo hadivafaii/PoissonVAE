@@ -202,9 +202,9 @@ class BaseVAE(Module):
 		normalize_dim = 1
 		if self.cfg.enc_type == 'conv':
 			# stem
-			if self.cfg.dataset in ['vH16', 'CIFAR16', 'BALLS']:
+			if self.cfg.dataset in ['vH16', 'CIFAR16', 'BALLS16', 'BALLS64']:
 				padding = 1
-			elif self.cfg.dataset == 'MNIST':
+			elif self.cfg.dataset.endswith('MNIST'):
 				padding = 'valid'
 			else:
 				raise ValueError(self.cfg.dataset)
@@ -709,11 +709,13 @@ def _build_conv_enc(
 		dataset: str,
 		add_fc: bool = False, ) -> nn.Sequential:
 
-	if dataset == 'MNIST':
+	if dataset.endswith('MNIST'):
 		kws['factorized'] = False  # FactorizedReduce incompatible
 		n_layers = 3
-	elif dataset in ['vH16', 'CIFAR16', 'BALLS']:
+	elif dataset in ['vH16', 'CIFAR16']:
 		n_layers = 2
+	elif dataset.startswith('BALLS'):
+		n_layers = 4
 	else:
 		raise ValueError(dataset)
 
@@ -755,7 +757,7 @@ def _build_conv_dec(
 		kws: dict,
 		dataset: str, ) -> nn.Sequential:
 
-	if dataset == 'MNIST':
+	if dataset.endswith('MNIST'):
 		n_layers = 4
 	elif dataset in ['vH16', 'CIFAR16', 'BALLS']:
 		n_layers = 3
@@ -769,7 +771,7 @@ def _build_conv_dec(
 			Cell(nch // MULT, nch // MULT, 'normal_dec', **kws),
 		])
 		nch //= MULT
-		if dataset == 'MNIST' and i == 2:
+		if dataset.endswith('MNIST') and i == 2:
 			layers.append(nn.Upsample(size=14))
 
 	kws_final = dict(

@@ -1,5 +1,6 @@
 from utils.generic import *
-from base.utils_model import load_quick
+from base.utils_model import load_quick, load_model_lite, compute_r2
+from analysis.linear import clf_score, untangle_score
 from analysis.clf import clf_analysis
 from analysis.eval import (
 	sparse_score,
@@ -7,6 +8,124 @@ from analysis.eval import (
 	model2temp,
 	model2key,
 )
+import gc
+
+
+# Copied from _IterativeVAE
+def perform_analysis(
+		results_dir: str,
+		device: str | torch.device,
+		attrs: Sequence[str] = None,
+		attrs_tr: Sequence[str] = None,
+		root: str = 'Dropbox/chkpts/PoissonVAE',
+		override_fits: bool = False,
+		verbose: bool = True, ):
+
+	attrs = attrs or [
+		'seed', 'dataset', 'type',
+		'latent_act', 'n_latents',
+	]
+	attrs_tr = attrs_tr or ['kl_beta']
+
+	root = add_home(root)
+	fits = sorted(
+		os.listdir(root),
+		key=alphanum_sort_key,
+	)
+	# the big for loop
+	for name in tqdm(fits, position=0):
+		save_name = f"{name}.npy"
+		is_already_fit = os.path.isfile(pjoin(
+			results_dir, save_name))
+		if is_already_fit and not override_fits:
+			continue
+
+		# (1) load trainer
+		try:
+			tr, meta = load_model_lite(
+				pjoin(root, name),
+				device=device,
+				shuffle=False,
+				verbose=False,
+				strict=True,
+			)
+		except StopIteration:
+			print(f"missing: {name}")
+			continue
+
+		# (2) info
+		info = {k: meta[k] for k in ['checkpoint', 'timestamp']}
+		info.update({a: getattr(tr.model.cfg, a, None) for a in attrs})
+		info['str_model'] = f"{tr.model.cfg.model_str}+amort"
+		info['archi'] = tr.model.cfg.attr2archi()
+		info['seq_len'] = 1
+		info.update({a: getattr(tr.cfg, a, None) for a in attrs_tr})
+		info['n_params'] = sum([p.numel() for p in tr.parameters()])
+		info['n_iters_train'] = tr.n_iters
+
+		# (3) compute loss, xtract ftrs
+		data, loss, etc = tr.validate(full_data=True)
+		loss['mse_map'] = tr.mse_map()
+		results = {k: v.mean() for k, v in loss.items()}
+		lifetime, population, _ = sparse_score(data['z'])
+		results['lifetime'] = lifetime.mean()
+		results['population'] = population.mean()
+		results['%-zeros'] = np.mean(data['z'] == 0)
+		results['r2'] = compute_r2(
+			true=tr.to(data['x']).flatten(start_dim=1),
+			pred=tr.to(data['y']).flatten(start_dim=1),
+		).mean().item()
+		results['samples_final'] = data['z']
+
+		# (4) clf/untangle score?
+		repres_key = model2key(tr.model.cfg.type)
+		if tr.model.cfg.dataset.endswith('MNIST'):
+			data_trn, _, etc_trn = tr.forward(
+				'trn', full_data=True)
+			z_dict = {
+				'trn': etc_trn[repres_key],
+				'vld': etc[repres_key],
+			}
+			g_dict = {
+				'trn': data_trn['g'],
+				'vld': data['g'],
+			}
+			results['clf_accuracy'] = clf_score(
+				z_dict=z_dict, g_dict=g_dict)
+
+		elif tr.model.cfg.dataset.startswith('BALLS'):
+			data_trn, _, etc_trn = tr.forward(
+				'trn', full_data=True)
+			data_tst, _, etc_tst = tr.forward(
+				'tst', full_data=True)
+			z_dict = {
+				'trn': etc_trn[repres_key],
+				'vld': etc[repres_key],
+				'tst': etc_tst[repres_key],
+			}
+			g_dict = {
+				'trn': data_trn['g'][:, [1, 3]],
+				'vld': data['g'][:, [1, 3]],
+				'tst': data_tst['g'][:, [1, 3]],
+			}
+			untangle = untangle_score(
+				z_dict=z_dict, g_dict=g_dict)
+			results = {**results, **untangle}
+
+		# (4) save
+		save_obj(
+			obj={'info': info, 'results': results},
+			save_dir=results_dir,
+			file_name=save_name,
+			verbose=verbose,
+		)
+
+		# (5) clean up
+		del tr
+		torch.cuda.empty_cache()
+		gc.collect()
+
+	return
 
 
 def analyze_fits(

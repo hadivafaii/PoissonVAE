@@ -57,10 +57,11 @@ def copy_fitted_model(
 
 
 def copy_checkpoints(
-		dst: str = 'Dropbox/chkpts/PoissonVAE',
-		src: str = 'Dropbox/git/PoissonVAE/logs',
+		project: str,
 		pattern: str = "[INFO] Checkpoint Directory:",
 		recursive: bool = False, ):
+	dst = pjoin('Dropbox/chkpts', project)
+	src = pjoin('Dropbox/git', project, 'logs')
 	dst, src = map(add_home, [dst, src])
 	if recursive:
 		txt_files = pathlib.Path(src).rglob('*.txt')
@@ -104,15 +105,8 @@ def _setup_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser()
 
 	parser.add_argument(
-		"--src",
-		help='where .txt log files are saved',
-		default='Dropbox/git/PoissonVAE/logs',
-		type=str,
-	)
-	parser.add_argument(
-		"--dst",
-		help='where to copy checkpoints?',
-		default='Dropbox/chkpts/PoissonVAE',
+		"project",
+		help='current project name',
 		type=str,
 	)
 	return parser.parse_args()
@@ -120,7 +114,7 @@ def _setup_args() -> argparse.Namespace:
 
 def _main():
 	args = _setup_args()
-	tot = copy_checkpoints(args.dst, args.src)
+	tot = copy_checkpoints(args.project)
 	msg = ' ——— '.join([
 		f"[PROGRESS] a total of {tot} models copied",
 		f"host: {os.uname().nodename}"

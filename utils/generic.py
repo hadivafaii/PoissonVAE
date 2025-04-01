@@ -21,6 +21,7 @@ import pandas as pd
 from torch import nn
 from scipy import stats as sp_stats
 from torch.nn import functional as F
+from torchvision.transforms.v2 import functional as F_vis
 from os.path import join as pjoin
 from datetime import datetime
 from tqdm import tqdm

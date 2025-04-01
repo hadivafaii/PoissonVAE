@@ -6,8 +6,9 @@ T_ANNEAL_CHOICES = ['lin', 'exp']
 METHOD_CHOICES = ['mc', 'exact']
 DATA_CHOICES = [
 	'vH16', 'CIFAR16',
-	'MNIST', 'CIFAR10',
-	'BALLS',
+	'MNIST', 'EMNIST',
+	'FashionMNIST', 'CIFAR10',
+	'BALLS16', 'BALLS64',
 ]
 
 
@@ -86,12 +87,28 @@ class ConfigVAE(BaseConfig):
 
 		super(ConfigVAE, self).__init__(**kwargs)
 
+	@property
+	def type(self):
+		return NotImplemented
+
+	@property
+	def model_str(self):
+		latent_name = getattr(
+			self, 'latent_act', None)
+		if latent_name is None:
+			return self.type
+		return '+'.join([self.type, latent_name])
+
 	def _init_input_sz(self):
-		if self.dataset in ['vH16', 'CIFAR16']:
-			self.input_sz = 16
+		dim_is_in_name = (
+			self.dataset.startswith('BALLS') or
+			self.dataset in ['vH16', 'CIFAR16']
+		)
+		if dim_is_in_name:
+			self.input_sz = int_from_str(self.dataset)
 		elif self.dataset == 'BALLS':
 			self.input_sz = 16
-		elif self.dataset == 'MNIST':
+		elif self.dataset.endswith('MNIST'):
 			self.input_sz = 28
 		else:
 			raise ValueError(self.dataset)
@@ -173,9 +190,12 @@ class ConfigPoisVAE(ConfigVAE):
 		self.hard_fwd = hard_fwd
 		self.exc_only = exc_only
 		self.rmax_q = rmax_q
-		self.type = 'poisson'
 		super(ConfigPoisVAE, self).__init__(
 			**kwargs)
+
+	@property
+	def type(self):
+		return 'poisson'
 
 	def _special_name(self):
 		special_name = [
@@ -199,9 +219,12 @@ class ConfigCatVAE(ConfigVAE):
 			**kwargs,
 	):
 		self.n_categories = n_categories
-		self.type = 'categorical'
 		super(ConfigCatVAE, self).__init__(
 			**kwargs)
+
+	@property
+	def type(self):
+		return 'categorical'
 
 	def _special_name(self):
 		return '-'.join([
@@ -217,10 +240,14 @@ class ConfigContVAE(ConfigVAE):
 			latent_act: str = None,
 			**kwargs,
 	):
+		self._type = model_type
 		self.latent_act = latent_act
-		self.type = model_type
 		super(ConfigContVAE, self).__init__(
 			**kwargs)
+
+	@property
+	def type(self):
+		return self._type
 
 	def _special_name(self):
 		special_name = [
@@ -414,7 +441,7 @@ def default_configs(
 	########################
 	# trainer cfgs
 	########################
-	if dataset in ['vH16', 'CIFAR16']:
+	if dataset in ['vH16', 'CIFAR16', 'BALLS16', 'BALLS64']:
 		cfg_tr = dict(
 			**cfg_tr,
 			lr=0.005,
@@ -424,13 +451,16 @@ def default_configs(
 			grad_clip=500,
 		)
 
-	elif dataset == 'MNIST':
+	elif dataset.endswith('MNIST'):
+		epochs = 400
+		if dataset == 'EMNIST':
+			epochs = 200
 		cfg_tr = dict(
 			**cfg_tr,
 			lr=0.002,
-			epochs=1200,
-			batch_size=200,
-			warm_restart=2,
+			epochs=epochs,
+			batch_size=100,
+			warm_restart=0,
 			optimizer_kws={'weight_decay': 3e-4},
 			grad_clip=1000,
 		)

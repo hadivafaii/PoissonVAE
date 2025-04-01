@@ -1,0 +1,1 @@
+./fit_vae.sh '0' 'EMNIST' 'poisson' 'conv+b|conv+b' --seed 10 --kl_beta 1.0 --n_latents 512 --comment amort

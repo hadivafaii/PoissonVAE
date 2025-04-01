@@ -68,6 +68,18 @@ def beta_anneal_linear(
 	return betas
 
 
+def compute_r2(true, pred):
+	ss_res = (true - pred).pow(2)
+	ss_tot = (true - true.mean(
+		dim=-1, keepdim=True)).pow(2)
+	ss_res = torch.sum(ss_res, dim=-1)
+	ss_tot = torch.sum(ss_tot, dim=-1)
+	# compute r2
+	eps = torch.finfo(torch.float32).eps
+	r2 = 1.0 - ss_res / (ss_tot + eps)
+	return r2
+
+
 class AverageMeter(object):
 	def __init__(self):
 		self.val = 0

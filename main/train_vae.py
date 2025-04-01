@@ -147,8 +147,8 @@ class _BaseTrainerVAE(BaseTrainer):
 		# create dataloaders
 		kws = dict(
 			batch_size=self.cfg.batch_size,
+			drop_last=self.shuffle,
 			shuffle=self.shuffle,
-			drop_last=True,
 		)
 		self.dl_trn = torch.utils.data.DataLoader(trn, **kws)
 		kws.update({'drop_last': False, 'shuffle': False})
@@ -732,11 +732,14 @@ def save_fit_info(
 
 	# file name
 	fname = [
-		tr.model.cfg.type,
+		tr.model.cfg.model_str,
 		args['archi'] if
 		args['archi'].endswith('>')
 		else f"<{args['archi']}>",
 		tr.model.cfg.dataset,
+		'_'.join([
+			f"b-{tr.cfg.kl_beta:0.3g}",
+			f"k-{tr.model.cfg.n_latents}"]),
 		# tr.cfg.method,
 	]
 	if args.get('comment') is not None:
@@ -1111,11 +1114,16 @@ def _main():
 	# main & tr
 	device = f"cuda:{args.device}"
 	vae = MODEL_CLASSES[args.model](cfg_vae)
-	tr = TrainerVAE(vae, cfg_tr, device=device)
+	tr = TrainerVAE(
+		model=vae,
+		cfg=cfg_tr,
+		device=device,
+		verbose=args.verbose,
+	)
 
 	if args.verbose:
 		print(args)
-		vae.print()
+		# vae.print()
 		msg = vae.cfg.name() + \
 			f"\n{tr.cfg.name()}" + \
 			f"_({vae.timestamp})\n"

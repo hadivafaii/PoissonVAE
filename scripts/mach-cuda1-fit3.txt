@@ -1,0 +1,1 @@
+./fit_vae.sh '1' 'EMNIST' 'gaussian' 'conv+b|conv+b' --seed 13 --latent_act 'relu' --kl_beta 1.0 --n_latents 512 --comment amort
