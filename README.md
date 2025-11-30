@@ -10,6 +10,11 @@ When trained on whitened natural image patches, the P-VAE learns sparse, "Gabor-
 
 This is significant because if you stick an electrode into the primary visual cortex and record from actual neurons, this is the type of selectivity you would observe. Remarkably, the P-VAE develops a similar selectivity in a purely unsupervised manner, despite never being exposed to data from real neurons.
 
+To learn more, check out:
+- Research paper: [https://openreview.net/forum?id=ektPEcqGLb](https://openreview.net/forum?id=ektPEcqGLb)
+- X summary thread: [https://x.com/hadivafaii/status/1794467115510227442](https://x.com/hadivafaii/status/1794467115510227442)
+- Talk: [https://www.youtube.com/live/Y9hP79tBXHo](https://www.youtube.com/live/Y9hP79tBXHo)
+
 ## 1. Code Structure
 
 - **`./main/`**: Full architecture and training code for all four VAEs, including the P-VAE, reproducing paper results.

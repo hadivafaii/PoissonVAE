@@ -1,4 +1,4 @@
-from .helper import *
+from base.helper import *
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import classification_report
 
@@ -107,7 +107,7 @@ def sparse_score(z: np.ndarray, cutoff: float = None):
 		counts = collections.Counter(
 			np.round(z.ravel()).astype(int))
 		portions = {
-			k: v / np.prod(z.shape) for
+			k: v / float(np.prod(z.shape)) for
 			k, v in counts.most_common()
 		}
 		try:

@@ -1,1 +1,1 @@
-./fit_vae.sh '3' 'EMNIST' 'gaussian' 'conv+b|conv+b' --seed 12 --kl_beta 1.0 --n_latents 512 --comment amort
+./fit_vae.sh '3' 'vH16' 'poisson' 'lin|lin' --seed 0 --n_latents 192 --kl_beta 2 --latent_act None --comment MetabolicCost --verbose && ./fit_vae.sh '3' 'vH16' 'poisson' 'lin|lin' --seed 0 --n_latents 256 --kl_beta 4 --latent_act None --comment MetabolicCost --verbose && ./fit_vae.sh '3' 'vH16' 'poisson' 'lin|lin' --seed 0 --n_latents 384 --kl_beta 8 --latent_act None --comment MetabolicCost --verbose

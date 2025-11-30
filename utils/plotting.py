@@ -2,8 +2,12 @@ from .generic import *
 import matplotlib
 import seaborn as sns
 from matplotlib import pyplot as plt
+from IPython.display import display as display_ipy
 from matplotlib.backends.backend_pdf import FigureCanvasPdf, PdfPages
-from matplotlib.colors import to_rgb, rgb2hex, Colormap, LinearSegmentedColormap
+from matplotlib.colors import (
+	to_rgb, rgb2hex, Colormap,
+	ListedColormap, LinearSegmentedColormap,
+)
 
 
 def imshow(*args, **kwargs):
@@ -21,6 +25,26 @@ def histplot(*args, **kwargs):
 	kwargs.setdefault('fill', False)
 	args = (tonp(args[0]), *args[1:])
 	return sns.histplot(*args, **kwargs)
+
+
+def compute_vrange(
+		data: np.ndarray | torch.Tensor,
+		symmetric_vrange: bool = False,
+		vmin: float = None,
+		vmax:float = None,
+		quantile: float = 1.00, ):
+	data = tonp(data).ravel()
+	q = np.clip(quantile, 0.0, 1.0)
+	if symmetric_vrange:
+		v = np.quantile(np.abs(data), q=q)
+		vmin = -v if vmin is None else vmin
+		vmax = v if vmax is None else vmax
+	else:
+		dmax = np.quantile(data, q=q)
+		dmin = np.quantile(data, q=1-q)
+		vmin = dmin if vmin is None else vmin
+		vmax = dmax if vmax is None else vmax
+	return vmin, vmax
 
 
 def make_ticks(
@@ -119,11 +143,14 @@ def cbar_only(
 		cmap=matplotlib.cm.get_cmap(cmap)
 		if isinstance(cmap, str) else cmap,
 		norm=matplotlib.colors.Normalize(vmin, vmax),
-		orientation='vertical' if vertical else 'horizontal',
+		orientation='vertical' if
+		vertical else 'horizontal',
 	)
 
-	cbar.outline.set_edgecolor(kwargs['edgecolor'])
-	cbar.outline.set_linewidth(kwargs['linewidth'])
+	cbar.outline.set_edgecolor(
+		kwargs['edgecolor'])
+	cbar.outline.set_linewidth(
+		kwargs['linewidth'])
 
 	cax.tick_params(
 		axis='y' if vertical else 'x',
@@ -134,9 +161,11 @@ def cbar_only(
 		width=kwargs['linewidth'],
 	)
 	if vertical:
-		cax.yaxis.set_ticks_position(kwargs['tick_position'])
+		cax.yaxis.set_ticks_position(
+			kwargs['tick_position'])
 	else:
-		cax.xaxis.set_ticks_position(kwargs['tick_position'])
+		cax.xaxis.set_ticks_position(
+			kwargs['tick_position'])
 	plt.close()
 	return fig, cax, cbar
 
@@ -156,6 +185,7 @@ def _iter_ax(axes):
 		return [axes]
 	elif isinstance(axes, np.ndarray):
 		return axes.flat
+	return iter(axes)
 
 
 def ax_square(axes):
@@ -177,7 +207,7 @@ def move_legend(
 		return ax
 	if bbox is None:
 		leg.remove()
-	else:
+	else: # noinspection PyTypeChecker
 		leg.set_bbox_to_anchor(bbox)
 	return ax
 
@@ -235,6 +265,80 @@ def remove_ticks(axes, full=True):
 				))
 			except AttributeError:
 				continue
+	return
+
+
+def save_marker_as_pdf(
+		marker: str,
+		save_dir: str,
+		file_name: str = None,
+		face_color: str = 'C0',
+		edge_color: str = 'dimgrey',
+		face_alpha: float = 0.4,
+		edge_alpha: float = 1.0,
+		markersize: float = 100,
+		edge_linewidth: float = 11.0, ):
+	# Create a figure with transparent background
+	fig, ax = plt.subplots(figsize=(2.1, 2.1))
+	fig.patch.set_alpha(0)
+	ax.set_aspect('equal')
+
+	# Set up a clean, minimal plot area
+	ax.set_xlim(-0.5, 0.5)
+	ax.set_ylim(-0.5, 0.5)
+	ax.axis('off')
+
+	# Plot the edge (border) first
+	ax.plot(
+		0, 0,
+		marker=marker,
+		markerfacecolor=face_color,
+		markeredgecolor='none',
+		markersize=markersize * 0.98,
+		alpha=face_alpha,
+		linestyle='none'
+	)
+	ax.plot(
+		0, 0,
+		marker=marker,
+		markerfacecolor='none',
+		markeredgecolor=edge_color,
+		markersize=markersize,
+		markeredgewidth=edge_linewidth,
+		alpha=edge_alpha,
+		linestyle='none'
+	)
+
+	if file_name is None:
+		file_name = f"marker_{marker}"
+	file_name = f"{file_name}.pdf"
+	fig.savefig(
+		pjoin(save_dir, file_name),
+		format='pdf',
+		bbox_inches='tight',
+		pad_inches=0.1,
+		transparent=True
+	)
+	plt.show(fig)
+	return
+
+
+def py_color_to_latex(cmap: str, name_str: str):
+	cmap = sns.color_palette(cmap)
+	colors = [rgb2hex(c) for c in cmap]
+
+	commands = []
+	for i, c in enumerate(colors):
+		cmd = (
+			'\\definecolor{'
+			+ f"{name_str}_{i}"
+			+ '}{HTML}{'
+			+ c.lstrip('#').upper()
+			+ '}'
+		)
+		commands.append(cmd)
+	commands = '\n'.join(commands)
+	print(commands)
 	return
 
 
@@ -308,12 +412,21 @@ def get_hm_cmap(
 		return heatmap
 
 
-def rd_or_bu():
+# noinspection PyTypeChecker
+def get_periodic_palette(n_colors: int = 180):
+	base_colors = sns.color_palette("hls", n_colors)
+	periodic_cmap = ListedColormap(base_colors)
+	return periodic_cmap, base_colors
+
+
+def rd_or_bu(reverse: bool = False):
 	colors = [
 		'#ed3800', '#ff6100', '#ffc8a7',
 		'#FFFFFF',
 		'#94d6ff', '#009EFF', '#0762df',
 	]
+	if reverse:
+		colors = colors[::-1]
 	cmap = make_cmap(
 		hex_colors=colors,
 		name='RdOrBu',
@@ -371,6 +484,7 @@ def fonts_html():
 	return "<div style='column-count: 2;'>{}</div>".format(code)
 
 
+# noinspection PyTypeChecker
 def set_style(
 		context: str = 'notebook',
 		style: str = 'ticks',
@@ -447,20 +561,22 @@ def create_figure(
 		**kwargs,
 	)
 	if reshape:
-		axes = np.array(axes).reshape((nrows, ncols))
+		axes = np.array(axes).reshape(
+			(nrows, ncols))
 	return fig, axes
 
 
 def save_fig(
 		fname: str,
 		save_dir: str,
-		fig: Union[plt.Figure, List[plt.Figure]],
-		sup: Union[plt.Text, List[plt.Text]] = None,
+		fig: plt.Figure | List[plt.Figure],
+		sup: plt.Text | List[plt.Text] = None,
 		display: bool = False,
 		**kwargs, ):
 	defaults = {
-		'dpi': 100,
+		'dpi': 300,
 		'bbox_inches': 'tight',
+		'transparent': True,
 	}
 	for k, v in defaults.items():
 		if k not in kwargs:
@@ -471,11 +587,11 @@ def save_fig(
 	if isinstance(fig, plt.Figure):
 		fig.savefig(
 			fname=save_file,
-			bbox_extra_artists=[sup],
+			bbox_extra_artists=sup,
 			**kwargs,
 		)
 	else:
-		sup = sup if sup else [None] * len(fig)
+		sup = sup or [None] * len(fig)
 		assert fname.split('.')[-1] == 'pdf'
 		assert len(fig) == len(sup) > 1
 		with PdfPages(save_file) as pages:
@@ -483,27 +599,26 @@ def save_fig(
 				if f is None:
 					continue
 				canvas = FigureCanvasPdf(f)
-				if s is None:
-					canvas.print_figure(
-						filename=pages,
-						**kwargs,
-					)
-				else:
+				if s is not None:
 					canvas.print_figure(
 						filename=pages,
 						bbox_extra_artists=[s],
 						**kwargs,
 					)
+				else:
+					canvas.print_figure(
+						filename=pages,
+						**kwargs,
+					)
 	if display:
 		if isinstance(fig, list):
 			for f in fig:
-				plt.show(f)
+				display_ipy(f)
 		else:
-			plt.show(fig)
+			display_ipy(fig)
+	if isinstance(fig, list):
+		for f in fig:
+			plt.close(f)
 	else:
-		if isinstance(fig, list):
-			for f in fig:
-				plt.close(f)
-		else:
-			plt.close(fig)
+		plt.close(fig)
 	return save_file

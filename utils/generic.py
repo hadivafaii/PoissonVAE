@@ -127,6 +127,17 @@ def get_rng(
 		return np.random.default_rng(seed=42)
 
 
+def divide_list(lst: list, n: int):
+	k, m = divmod(len(lst), n)
+	lst_divided = [
+		lst[
+			i * k + min(i, m):
+			(i + 1) * k + min(i + 1, m)
+		] for i in range(n)
+	]
+	return lst_divided
+
+
 def add_home(path: str):
 	if '/home/' not in path:
 		return pjoin(os.environ['HOME'], path)
@@ -260,7 +271,7 @@ def save_obj(
 			raise RuntimeError(mode)
 	if verbose:
 		print(f"[PROGRESS] '{file_name}' saved at\n{save_dir}")
-		return
+		return None
 	return path
 
 
@@ -278,6 +289,27 @@ def merge_dicts(
 	for k, v in tqdm(iterable, **kws):
 		merged[k].extend(v)
 	return dict(merged)
+
+
+def expected_relu(loc: np.ndarray, scale: np.ndarray):
+	"""
+	E[ReLU(z)] = scale * phi(loc/scale) + loc * Phi(loc/scale)
+	"""
+	loc = np.asarray(loc)
+	scale = np.asarray(scale)
+
+	# Handle scale = 0 to avoid division by zero
+	safe_scale = np.where(scale > 0, scale, 1.0)
+	alpha = loc / safe_scale
+
+	x = (
+		scale * sp_stats.norm.pdf(alpha) +
+		loc * sp_stats.norm.cdf(alpha)
+	)
+	y = np.maximum(loc, 0)  # scale = 0 → delta → just ReLU(loc)
+	result = np.where(scale > 0, x, y)
+
+	return result
 
 
 def find_last_contiguous_zeros(mask: np.ndarray, w: int):

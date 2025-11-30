@@ -541,12 +541,12 @@ class TrainerVAE(_BaseTrainerVAE):
 		assert dl_name in ['trn', 'vld', 'tst']
 		dl = getattr(self, f"dl_{dl_name}")
 		if dl is None:
-			return
+			return None
 		model = self.select_model(use_ema)
 		if temp is None:
 			temp = model.temp
 
-		mse, kl, kl_diag = [], [], []
+		r2, mse, kl, kl_diag = [], [], [], []
 		x_all, y_all, z_all, g_all = [], [], [], []
 		etc = collections.defaultdict(list)
 
@@ -583,15 +583,19 @@ class TrainerVAE(_BaseTrainerVAE):
 					g_all.append(tonp(g))
 			z_all.append(tonp(z))
 			# loss
+			r2.append(tonp(compute_r2(
+				true=x.flatten(start_dim=1),
+				pred=y.flatten(start_dim=1),
+			)))
 			mse.append(tonp(model.loss_recon(y, x)))
 			kl.append(tonp(torch.sum(_kl, dim=1)))
 			kl_diag.append(tonp(torch.mean(
 				_kl, dim=0, keepdim=True)))
 
-		x, y, z, g, mse, kl, kl_diag = cat_map(
-			[x_all, y_all, z_all, g_all, mse, kl, kl_diag])
+		x, y, z, g, r2, mse, kl, kl_diag = cat_map(
+			[x_all, y_all, z_all, g_all, r2, mse, kl, kl_diag])
 		data = {'x': x, 'y': y, 'z': z, 'g': g}
-		loss = {'mse': mse, 'kl': kl, 'kl_diag': kl_diag.mean(0)}
+		loss = {'r2': r2, 'mse': mse, 'kl': kl, 'kl_diag': kl_diag.mean(0)}
 		etc = {k: np.concatenate(v) for k, v in etc.items()}
 		return data, loss, etc
 

@@ -77,7 +77,22 @@ def perform_analysis(
 		).mean().item()
 		results['samples_final'] = data['z']
 
-		# (4) clf/untangle score?
+		# (4) variational posterior mean
+		if tr.model.cfg.type == 'poisson':
+			posterior_mean = etc['r*dr'].mean()
+		elif tr.model.cfg.type == 'gaussian':
+			if tr.model.cfg.latent_act is None:
+				posterior_mean = etc['loc'].mean()
+			elif tr.model.cfg.latent_act == 'relu':
+				posterior_mean = expected_relu(
+					etc['loc'], etc['scale']).mean()
+			else:
+				raise NotImplementedError
+		else:
+			raise NotImplementedError
+		results['posterior_mean'] = posterior_mean
+
+		# (5) clf/untangle score?
 		repres_key = model2key(tr.model.cfg.type)
 		if tr.model.cfg.dataset.endswith('MNIST'):
 			data_trn, _, etc_trn = tr.forward(

@@ -143,7 +143,11 @@ def load_model_lite(
 		if f.split('.')[-1] == 'pt'
 	)
 	state_dict = pjoin(path, fname_pt)
-	state_dict = torch.load(state_dict, 'cpu')
+	state_dict = torch.load(
+		f=state_dict,
+		map_location='cpu',
+		weights_only=False,
+	)
 	ema = state_dict['model_ema'] is not None
 	model.load_state_dict(
 		state_dict=state_dict['model'],
@@ -260,7 +264,11 @@ def load_model(
 			checkpoint == _chkpt(f)
 		)
 	state_dict = pjoin(path, fname_pt)
-	state_dict = torch.load(state_dict, 'cpu')
+	state_dict = torch.load(
+		f=state_dict,
+		map_location='cpu',
+		weights_only=False,
+	)
 	ema = state_dict['model_ema'] is not None
 	model.load_state_dict(
 		state_dict=state_dict['model'],
