@@ -2,6 +2,95 @@ from base.utils_model import *
 dists.Distribution.set_default_validate_args(False)
 
 
+class Poisson:
+	def __init__(
+			self,
+			log_rate: torch.Tensor,
+			temp: float = 0.0,
+			clamp: float | None = None,
+			indicator_approx: str = 'sigmoid',
+			n_exp: int | str = 'infer',
+			n_exp_p: float = 1e-3,
+	):
+		assert temp >= 0.0, f"must be non-neg: {temp}"
+		assert indicator_approx in _INDICATOR_FNS
+		self.indicator_approx = indicator_approx
+		self.temp = temp
+		self.clamp = clamp
+		# setup rate & exp dist
+		if self.clamp is not None:
+			log_rate = softclamp_upper(
+				log_rate, self.clamp)
+		eps = torch.finfo(torch.float32).eps
+		self.rate = torch.exp(log_rate) + eps
+		self._exp = dists.Exponential(self.rate)
+		# compute n_exp
+		if n_exp == 'infer':
+			n_exp = self._infer_n_exp(n_exp_p)
+		self.n_exp = int(n_exp)
+
+	def __repr__(self):
+		parts = [
+			f"rate: {self.rate.shape}",
+			f"temp: {self.temp}",
+			f"n_exp: {self.n_exp}",
+		]
+		return f"Poisson({', '.join(parts)})"
+
+	@torch.no_grad()
+	def _infer_n_exp(self, n_exp_p):
+		max_rate = self.rate.max().item()
+		n_exp = compute_n_exp(max_rate, n_exp_p)
+		return int(n_exp)
+
+	@property
+	def mean(self):
+		return self.rate
+
+	@property
+	def variance(self):
+		return self.rate
+
+	# noinspection PyTypeChecker
+	def rsample(self, hard: bool = False):
+		if self.temp == 0.0:
+			return self.sample()
+
+		# (1) inter-event times
+		x = self._exp.rsample((self.n_exp,))
+
+		# (2) arrival t of events
+		times = torch.cumsum(x, dim=0)
+
+		# (3) compute raw logits
+		# (input to the sigmoid-like function)
+		# This maps the threshold time t=1 to 0
+		# t = 1 - temp → logits = 1
+		# t = 1 + temp → logits = -1
+		logits = (1 - times) / self.temp
+
+		# (4) events within [0, 1]
+		fn = _INDICATOR_FNS.get(
+			self.indicator_approx)
+		indicator = fn(logits)
+
+		# (5) soft event counts
+		z = indicator.sum(0).float()
+
+		return z
+
+	@torch.no_grad()
+	def sample(self):
+		return torch.poisson(self.rate).float()
+
+	def log_prob(self, samples: torch.Tensor):
+		return (
+			- self.rate
+			- torch.lgamma(samples + 1)
+			+ samples * torch.log(self.rate)
+		)
+
+
 # noinspection PyAbstractClass
 class Categorical(dists.RelaxedOneHotCategorical):
 	def __init__(
@@ -133,63 +222,15 @@ class Normal(dists.Normal):
 		return
 
 
-# noinspection PyTypeChecker
-class Poisson:
-	def __init__(
-			self,
-			log_rate: torch.Tensor,
-			temp: float = 1.0,
-			n_exp: int = 263,
-			clamp: float = 5.3,
-	):
-		assert temp >= 0
-		self.t = temp
-		self.n = n_exp
-		self.c = clamp
-		self._init(log_rate)
+def compute_n_exp(rate: float, p: float = 1e-6):
+	assert rate > 0.0, f"must be positive, got: {rate}"
+	pois = sp_stats.poisson(rate)
+	n_exp = pois.ppf(1.0 - p)
+	return int(n_exp)
 
-	@property
-	def mean(self):
-		return self.rate
 
-	@property
-	def variance(self):
-		return self.rate
-
-	def rsample(self, hard: bool = False):
-		x = self.exp.rsample((self.n,))  # inter-event times
-		times = torch.cumsum(x, dim=0)   # arrival times of events
-
-		indicator = times < 1.0
-		z_hard = indicator.sum(0).float()
-
-		if self.t > 0:
-			indicator = torch.sigmoid(
-				(1.0 - times) / self.t)
-			z = indicator.sum(0).float()
-		else:
-			z = z_hard
-
-		if hard:
-			return z + (z_hard - z).detach()
-		return z
-
-	def sample(self):
-		return torch.poisson(self.rate).float()
-
-	def log_p(self, samples: torch.Tensor):
-		return (
-			- self.rate
-			- torch.lgamma(samples + 1)
-			+ samples * torch.log(self.rate)
-		)
-
-	def _init(self, log_rates):
-		eps = torch.finfo(torch.float32).eps
-		log_rates = softclamp_upper(log_rates, self.c)
-		self.rate = torch.exp(log_rates) + eps
-		self.exp = dists.Exponential(self.rate)
-		return
+def softclamp(x: torch.Tensor, upper: float, lower: float = 0.0):
+	return lower + F.softplus(x - lower) - F.softplus(x - upper)
 
 
 def softclamp_sym(x: torch.Tensor, c: float):
@@ -200,5 +241,42 @@ def softclamp_upper(x: torch.Tensor, c: float):
 	return c - F.softplus(c - x)
 
 
-def softclamp(x: torch.Tensor, upper: float, lower: float = 0.0):
-	return lower + F.softplus(x - lower) - F.softplus(x - upper)
+def hard_sigmoid(x: torch.Tensor) -> torch.Tensor:
+	"""
+	Piecewise linear approximation (Hard Sigmoid).
+	Maps [-1, 1] linearly to [0, 1].
+	Exact 0 for x < -1, Exact 1 for x > 1.
+	"""
+	return torch.clamp(0.5 * x + 0.5, min=0.0, max=1.0)
+
+
+def cubic_sigmoid(x: torch.Tensor) -> torch.Tensor:
+	"""
+	Cubic Hermite interpolation (Smoothstep).
+	Maps [-1, 1] to [0, 1] with C1 smoothness (zero derivative at boundaries).
+	f(u) = 3u^2 - 2u^3, where u = (x+1)/2
+	"""
+	# 1. Normalize x from [-1, 1] to u in [0, 1]
+	u = torch.clamp(0.5 * x + 0.5, min=0.0, max=1.0)
+	# 2. Cubic polynomial
+	return 3 * u.pow(2) - 2 * u.pow(3)
+
+
+def cosine_sigmoid(x: torch.Tensor) -> torch.Tensor:
+	"""
+	Cosine-based smooth approximation.
+	Maps [-1, 1] to [0, 1] with C_infinity smoothness inside the window.
+	f(u) = 0.5 * (1 - cos(pi * u)), where u = (x+1)/2
+	"""
+	# 1. Normalize x from [-1, 1] to u in [0, 1]
+	u = torch.clamp(0.5 * x + 0.5, min=0.0, max=1.0)
+	# 2. Cosine ease-in-out
+	return 0.5 * (1.0 - torch.cos(torch.pi * u))
+
+
+_INDICATOR_FNS = {
+    'sigmoid': torch.sigmoid,
+    'linear': hard_sigmoid,
+    'cubic': cubic_sigmoid,
+    'cosine': cosine_sigmoid,
+}

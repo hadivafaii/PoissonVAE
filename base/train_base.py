@@ -1,5 +1,26 @@
 from base.utils_model import *
-from torch.utils.tensorboard import SummaryWriter
+import subprocess
+import wandb
+
+
+def _get_git_root() -> Optional[str]:
+	"""
+	Finds git root relative to THIS file, not the current working directory.
+	This ensures it works even if run from a notebook outside the repo.
+	"""
+	try:
+		# Anchor the search to the location of train_base.py
+		anchor_dir = os.path.dirname(os.path.abspath(__file__))
+
+		git_root = subprocess.check_output(
+			['git', 'rev-parse', '--show-toplevel'],
+			stderr=subprocess.DEVNULL,
+			cwd=anchor_dir,  # <--- This is the key fix
+		).decode('utf-8').strip()
+		return git_root
+	except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+		return None
+
 
 
 class BaseTrainer(object):
@@ -18,14 +39,14 @@ class BaseTrainer(object):
 		self.device = torch.device(device)
 		self.model = model.to(self.device).eval()
 		self.stats = collections.defaultdict(dict)
-		self.scaler = torch.cuda.amp.GradScaler(
+		self.scaler = torch.amp.GradScaler(
 			enabled=self.cfg.use_amp)
 		self.model_ema = None
 		self.ema_rate = None
 		self.n_iters = None
 		self.pbar = None
 
-		self.writer = None
+		self.wandb_run = None
 		self.logger = None
 		self.dl_trn = None
 		self.dl_vld = None
@@ -57,23 +78,24 @@ class BaseTrainer(object):
 		assert isinstance(epochs, (int, range)), "allowed: {int, range}"
 		epochs = range(epochs) if isinstance(epochs, int) else epochs
 		fit_name = fit_name if fit_name else self.cfg.name()
-		if fresh_fit:
-			self.stats.clear()
+
+		# Init wandb (no effect when no_wandb=True)
+		self._init_wandb_run(fit_name, fresh_fit)
+
 		if save:
 			if fresh_fit or self.model.chkpt_dir is None:
 				self.model.create_chkpt_dir(fit_name)
 			if fresh_fit:
 				self.cfg.save(self.model.chkpt_dir)
-			writer = str(pjoin(
-				self.model.cfg.runs_dir,
-				os.path.basename(self.model.chkpt_dir),
-			))
-			self.writer = SummaryWriter(writer)
+
+		if fresh_fit and self.model.chkpt_dir is not None:
+			self.stats.clear()
 			self.logger = make_logger(
 				name=type(self).__name__,
 				path=self.model.chkpt_dir,
 				level=logging.WARNING,
 			)
+
 		if self.cfg.scheduler_type == 'cosine' and fresh_fit:
 			self.optim_schedule.T_max *= len(self.dl_trn)
 
@@ -100,8 +122,9 @@ class BaseTrainer(object):
 			if (epoch + 1) % self.cfg.eval_freq == 0:
 				gstep = (epoch + 1) * len(self.dl_trn)
 				_ = self.validate(gstep)
-		if self.writer is not None:
-			self.writer.close()
+
+		if self.wandb_run is not None:
+			wandb.finish()
 		return
 
 	def iteration(self, epoch: int = 0):
@@ -113,6 +136,57 @@ class BaseTrainer(object):
 
 	def setup_data(self):
 		raise NotImplementedError
+
+	def _init_wandb_run(self, fit_name: str, fresh_fit: bool):
+		no_wandb = getattr(self.cfg, 'no_wandb', False)
+		if no_wandb:
+			return
+
+		# 1. Prepare Config
+		run_config = {}
+		if hasattr(self.model, 'cfg'):
+			run_config.update(vars(self.model.cfg))
+		if hasattr(self, 'cfg'):
+			run_config.update(vars(self.cfg))
+
+		# 2. Init WandB
+		self.wandb_run = wandb.init(
+			project=getattr(self.cfg, 'wandb_project', 'PoissonVAE'),
+			entity=getattr(self.cfg, 'wandb_entity', None),
+			name=fit_name,
+			config=run_config,
+			dir=self.model.cfg.runs_dir if
+			hasattr(self.model.cfg, 'runs_dir')
+			else None,
+			resume="allow",
+			tags=["resume"] if not fresh_fit else [],
+		)
+
+		# 3. Find git root for code saving
+		git_root = _get_git_root()
+
+		# 4. Log Code Snapshot (only on fresh start)
+		if fresh_fit and git_root is not None:
+			if self.verbose:
+				print(f"Saving code snapshot from: {git_root}")
+			# noinspection PyArgumentList
+			self.wandb_run.log_code(
+				root=git_root,
+				include_fn=lambda path: (
+					path.endswith(".py") or
+					path.endswith(".yaml") or
+					path.endswith(".yml") or
+					path.endswith(".json") or
+					path.endswith(".md") or
+					path.endswith(".txt")),
+				exclude_fn=lambda path: (
+					"wandb" in path or
+					"__pycache__" in path or
+					".git" in path or
+					"node_modules" in path or
+					".egg-info" in path),
+			)
+		return
 
 	def swap_model(self, new_model, full: bool = False):
 		self.model = new_model.to(self.device).eval()
@@ -139,7 +213,7 @@ class BaseTrainer(object):
 		)
 		for p1, p2 in looper:
 			p2.data.mul_(self.ema_rate)
-			p2.data.add_(p1.data.mul(1-self.ema_rate))
+			p2.data.add_(p1.data.mul(1 - self.ema_rate))
 		return
 
 	def parameters(self, requires_grad: bool = True):

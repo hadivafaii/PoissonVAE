@@ -22,11 +22,11 @@ class BaseVAE(Module):
 	def infer(self, x):
 		raise NotImplementedError
 
-	@torch.inference_mode()
+	@torch.no_grad()
 	def xtract_ftr(self, x, t: float = 0.0):
 		raise NotImplementedError
 
-	@torch.inference_mode()
+	@torch.no_grad()
 	def sample(self, n: int, t: float = 0.0):
 		raise NotImplementedError
 
@@ -97,7 +97,7 @@ class BaseVAE(Module):
 
 	def loss_weight(self):
 		if not self.all_lognorm:
-			return
+			return None
 		return torch.cat(self.all_lognorm).pow(2).mean()
 
 	def find_dead_neurons(self, frac: int = 8):
@@ -115,10 +115,10 @@ class BaseVAE(Module):
 		)
 		hist, _ = np.histogram(
 			log_norms, bins=bins)
-		median_idx = np.digitize(
+		median_idx = int(np.digitize(
 			x=np.median(log_norms),
 			bins=bins,
-		) - 1
+		)) - 1
 		idx = find_last_contiguous_zeros(
 			mask=hist[:median_idx] > 0,
 			w=len(log_norms) * 2,
@@ -409,10 +409,11 @@ class PoissonVAE(BaseVAE):
 			log_rate=log_r + log_dr,
 			n_exp=self.n_exp,
 			temp=t,
+			indicator_approx=self.cfg.indicator_approx,
 		)
 		return dist, log_dr
 
-	@torch.inference_mode()
+	@torch.no_grad()
 	def xtract_ftr(
 			self,
 			x: torch.Tensor,
@@ -426,7 +427,7 @@ class PoissonVAE(BaseVAE):
 		y = self.decode(spks)
 		return dist, log_dr, spks, y
 
-	@torch.inference_mode()
+	@torch.no_grad()
 	def sample(self, n: int, t: float = 0.0):
 		if t is None:
 			t = self.temp
@@ -435,6 +436,7 @@ class PoissonVAE(BaseVAE):
 			log_rate=log_r,
 			n_exp=self.n_exp,
 			temp=t,
+			indicator_approx=self.cfg.indicator_approx,
 		)
 		spks = dist.rsample()
 		x_samples = self.decode(spks)
@@ -511,7 +513,7 @@ class ContinuousVAE(BaseVAE):
 		dist = self._q(len(x), loc, log_scale, t)
 		return dist
 
-	@torch.inference_mode()
+	@torch.no_grad()
 	def xtract_ftr(self, x, t: float = 0.0):
 		dist = self.infer(x, t)
 		z = dist.sample()
@@ -519,7 +521,7 @@ class ContinuousVAE(BaseVAE):
 		y = self.decode(z)
 		return dist, z, y
 
-	@torch.inference_mode()
+	@torch.no_grad()
 	def sample(self, n: int, t: float = 1.0):
 		if t is None:
 			t = self.temp
@@ -613,7 +615,7 @@ class CategoricalVAE(BaseVAE):
 		dist = self.Dist(logits=logits, temp=t)
 		return dist
 
-	@torch.inference_mode()
+	@torch.no_grad()
 	def xtract_ftr(self, x, t: float = 0.0):
 		dist = self.infer(x, t)
 		z = dist.sample()
@@ -621,7 +623,7 @@ class CategoricalVAE(BaseVAE):
 		y = self.decode(z)
 		return dist, z, y
 
-	@torch.inference_mode()
+	@torch.no_grad()
 	def sample(self, n: int, t: float = 0.0):
 		if t is None:
 			t = self.temp
@@ -703,6 +705,7 @@ class ResConvPool(nn.Module):
 		return skip + self.eps * x
 
 
+# noinspection PyTypeChecker
 def _build_conv_enc(
 		nch: int,
 		kws: dict,
@@ -752,6 +755,7 @@ def _build_conv_enc(
 	return nn.Sequential(*layers, ResDenseLayer(nch))
 
 
+# noinspection PyTypeChecker
 def _build_conv_dec(
 		nch: int,
 		kws: dict,

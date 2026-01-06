@@ -177,19 +177,18 @@ class ConfigPoisVAE(ConfigVAE):
 			self,
 			prior_clamp: float = -2.0,
 			prior_log_dist: str = 'uniform',
+			indicator_approx: str = 'sigmoid',
 			hard_fwd: bool = False,
 			exc_only: bool = False,
-			rmax_q: float = 1.0,
 			**kwargs,
 	):
 		assert prior_log_dist in _LOG_DIST_CHOICES, \
 			f"allowed prior log_dists:\n{_LOG_DIST_CHOICES}"
-		assert 0.95 < rmax_q <= 1.0, "quantile approx of max"
+		self.indicator_approx = indicator_approx
 		self.prior_log_dist = prior_log_dist
 		self.prior_clamp = prior_clamp
 		self.hard_fwd = hard_fwd
 		self.exc_only = exc_only
-		self.rmax_q = rmax_q
 		super(ConfigPoisVAE, self).__init__(
 			**kwargs)
 
@@ -207,8 +206,6 @@ class ConfigPoisVAE(ConfigVAE):
 			special_name += ['hard']
 		if self.exc_only:
 			special_name += ['exc']
-		if self.rmax_q != 1.0:
-			special_name += [f"rmax({self.rmax_q:0.2g})"]
 		return '_'.join(special_name)
 
 

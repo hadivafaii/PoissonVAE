@@ -37,7 +37,7 @@ class BaseConfig(object):
 		raise NotImplementedError
 
 	def _save(self, **kwargs):
-		_save_config(self, self.mods_dir, **kwargs)
+		_save_config(self, str(self.mods_dir), **kwargs)
 
 	def get_all_dirs(self):
 		dirs = {k: getattr(self, k) for k in dir(self) if '_dir' in k}

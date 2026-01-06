@@ -103,9 +103,9 @@ class _BaseTrainerVAE(BaseTrainer):
 				self.model.cfg.enc_type == 'lin' and
 				self.model.cfg.dataset != 'CIFAR10-PATCHES'),
 			('glc', 85e-3): (
-					self.model.cfg.type == 'gaussian' and
-					self.model.cfg.enc_type == 'lin' and
-					self.model.cfg.dataset == 'CIFAR10-PATCHES'),
+				self.model.cfg.type == 'gaussian' and
+				self.model.cfg.enc_type == 'lin' and
+				self.model.cfg.dataset == 'CIFAR10-PATCHES'),
 		}
 		for (_, thres), r in rules.items():
 			if r:
@@ -340,7 +340,7 @@ class TrainerVAE(_BaseTrainerVAE):
 			# zero grad
 			self.optim.zero_grad(set_to_none=True)
 			# forward + loss
-			with torch.cuda.amp.autocast(enabled=self.cfg.use_amp):
+			with torch.amp.autocast('cuda', enabled=self.cfg.use_amp):
 				self.model.update_t(self.temperatures[gstep])
 				if self.model.cfg.type == 'poisson':
 					annealing_is_done = (
@@ -396,10 +396,7 @@ class TrainerVAE(_BaseTrainerVAE):
 				perdim_mse.update(_v)
 				perdim_kl.update(kl_diag.mean().item())
 				if self.model.cfg.type == 'poisson':
-					r_max.update(torch.quantile(
-						input=dist.rate.ravel(),
-						q=self.model.cfg.rmax_q,
-					).item())
+					r_max.update(dist.rate.max().item())
 
 			# step
 			self.scaler.step(self.optim)
@@ -407,8 +404,8 @@ class TrainerVAE(_BaseTrainerVAE):
 			self.update_ema()
 			# optim schedule
 			cond_schedule = (
-				epoch >= self.cfg.warmup_epochs
-				and self.optim_schedule is not None
+					epoch >= self.cfg.warmup_epochs
+					and self.optim_schedule is not None
 			)
 			if cond_schedule:
 				self.optim_schedule.step()
@@ -416,19 +413,20 @@ class TrainerVAE(_BaseTrainerVAE):
 			# save more stats
 			current_lr = self.optim.param_groups[0]['lr']
 			self.stats['lr'][gstep] = current_lr
-			self.stats['t'][gstep] = dist.t.item()
+			self.stats['temp'][gstep] = dist.temp.item()
 			if self.model.cfg.type == 'poisson':
 				self.stats['r_max'][gstep] = r_max.avg
 				self.stats['n_exp'][gstep] = self.model.n_exp.item()
 
-			# write?
+			# WANDB LOGGING
 			cond_write = (
 				gstep > 0 and
-				self.writer is not None and
+				self.wandb_run is not None and
 				gstep % self.cfg.log_freq == 0
 			)
 			if not cond_write:
 				continue
+
 			to_write = {
 				'coeffs/beta': self.betas[gstep],
 				'coeffs/temp': self.temperatures[gstep],
@@ -443,7 +441,6 @@ class TrainerVAE(_BaseTrainerVAE):
 					'coeffs/hard': int(hard),
 				})
 			to_write.update({
-				**to_write,
 				'train/loss_kl': torch.mean(kl_batch).item(),
 				'train/loss_mse': torch.mean(recon_batch).item(),
 				'train/nelbo_avg': nelbo.avg,
@@ -459,9 +456,8 @@ class TrainerVAE(_BaseTrainerVAE):
 			ratio = n_active / self.model.cfg.n_latents
 			to_write['train/n_active_ratio'] = ratio
 
-			# write
-			for k, v in to_write.items():
-				self.writer.add_scalar(k, v, gstep)
+			# Log to WandB
+			wandb.log(to_write, step=gstep)
 
 			# reset avg meters
 			if gstep % 100 == 0:
@@ -510,25 +506,27 @@ class TrainerVAE(_BaseTrainerVAE):
 					seed=self.model.cfg.seed,
 					sizes=[200, 1000],
 					n_iter=500 if (  # last epoch
-						gstep ==
-						self.cfg.epochs *
-						len(self.dl_trn)
+							gstep ==
+							self.cfg.epochs *
+							len(self.dl_trn)
 					) else 20,
 				)
 				for size, accuracy in df_summary['mean'].items():
 					to_write[f'knn/size={size}'] = accuracy
 
-			# write stuff
+			# Log scalars to WandB (only if wandb is active)
+			if self.wandb_run is not None:
+				wandb.log(to_write, step=gstep)
+
 			for k, v in to_write.items():
-				self.writer.add_scalar(k, v, gstep)
 				self.stats[k][gstep] = v
 
-			# add figs
+			# Log figures to WandB
 			if self.model.cfg.type == 'categorical':
 				order = np.argsort(etc['logits'].mean(0).ravel())
 			else:
 				order = np.argsort(loss['kl_diag'].ravel())
-			self.figs_to_writer(gstep, kwargs.get('temp'), order)
+			self.log_figs_to_wandb(gstep, kwargs.get('temp'), order)
 
 		return data, loss, etc
 
@@ -637,16 +635,19 @@ class TrainerVAE(_BaseTrainerVAE):
 		return x_sample, z_sample
 
 	@torch.inference_mode()
-	def figs_to_writer(
+	def log_figs_to_wandb(
 			self,
 			gstep: int,
 			temp: float,
 			order: Sequence[int] = None, ):
+		if self.wandb_run is None:
+			return None
+
 		freq = max(10, self.cfg.eval_freq * 5)
 		ep = int(gstep / len(self.dl_trn))
 		cond = ep % freq == 0
 		if not cond:
-			return
+			return None
 		figs = {}
 		if self.model.cfg.dec_type == 'lin':
 			# w_dec
@@ -671,8 +672,15 @@ class TrainerVAE(_BaseTrainerVAE):
 			figs['recon'] = self.show_recon(**kws)[0]
 			figs['samples'] = self.show_samples(**kws)[0]
 
+		# Log dict of images
+		log_dict = {}
 		for name, f in figs.items():
-			self.writer.add_figure(f'figs/{name}', f, gstep)
+			log_dict[f'figs/{name}'] = wandb.Image(f)
+		wandb.log(log_dict, step=gstep)
+
+		# Close figs to free memory
+		for f in figs.values():
+			plt.close(f)
 
 		return figs
 
@@ -885,6 +893,12 @@ def _setup_args() -> argparse.Namespace:
 		type=str,
 	)
 	parser.add_argument(
+		"--indicator_approx",
+		help='soft indicator function',
+		default='sigmoid',
+		type=str,
+	)
+	parser.add_argument(
 		"--hard_fwd",
 		help='hard threshold?',
 		default=False,
@@ -895,12 +909,6 @@ def _setup_args() -> argparse.Namespace:
 		help='only excitation?',
 		default=False,
 		type=true_fn,
-	)
-	parser.add_argument(
-		"--rmax_q",
-		help='rmax quantile approx',
-		default=1.0,
-		type=float,
 	)
 	# categorical
 	parser.add_argument(
@@ -1080,6 +1088,28 @@ def _setup_args() -> argparse.Namespace:
 		action='store_true',
 		default=False,
 	)
+	########################
+	# Wandb
+	########################
+	parser.add_argument(
+		"--wandb_project",
+		type=str,
+		default='PoissonVAE',
+		help="Wandb project name",
+	)
+	parser.add_argument(
+		"--wandb_entity",
+		type=str,
+		default=None,
+		help="Wandb entity (username or team)",
+	)
+	parser.add_argument(
+		"--no_wandb",
+		action="store_true",
+		default=False,
+		help="Disable wandb logging",
+	)
+
 	return parser.parse_args()
 
 
@@ -1115,6 +1145,11 @@ def _main():
 	if cfg_tr.method == 'exact' and 'mlp' in args.archi:
 		cfg_tr.grad_clip *= 4
 
+	# manually inject WandB args into cfg_tr
+	cfg_tr.wandb_project = args.wandb_project
+	cfg_tr.wandb_entity = args.wandb_entity
+	cfg_tr.no_wandb = args.no_wandb
+
 	# main & tr
 	device = f"cuda:{args.device}"
 	vae = MODEL_CLASSES[args.model](cfg_vae)
@@ -1128,9 +1163,10 @@ def _main():
 	if args.verbose:
 		print(args)
 		# vae.print()
-		msg = vae.cfg.name() + \
-			f"\n{tr.cfg.name()}" + \
-			f"_({vae.timestamp})\n"
+		msg = '\n'.join([
+			f"\n{vae.cfg.name()}",
+			f"{tr.cfg.name()}_({vae.timestamp})\n",
+		])
 		print(msg)
 
 	if args.comment is not None:

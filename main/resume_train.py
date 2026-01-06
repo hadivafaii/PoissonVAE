@@ -18,7 +18,7 @@ def _setup_args() -> argparse.Namespace:
 	)
 	parser.add_argument(
 		"fit_name",
-		help='fit string?',
+		help='fit string (must match folder name for wandb resume)',
 		type=str,
 	)
 	parser.add_argument(
@@ -75,7 +75,11 @@ def _main():
 
 	start = now(True)
 	if not args.dry_run:
-		tr.train(epochs=epochs, fresh_fit=False)
+		tr.train(
+			fit_name=args.fit_name,
+			epochs=epochs,
+			fresh_fit=False
+		)
 		save_fit_info(vars(args), tr, start)
 	return
 
