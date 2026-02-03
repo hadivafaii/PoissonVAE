@@ -178,7 +178,6 @@ class ConfigPoisVAE(ConfigVAE):
 			prior_clamp: float = -2.0,
 			prior_log_dist: str = 'uniform',
 			indicator_approx: str = 'sigmoid',
-			hard_fwd: bool = False,
 			exc_only: bool = False,
 			**kwargs,
 	):
@@ -187,7 +186,6 @@ class ConfigPoisVAE(ConfigVAE):
 		self.indicator_approx = indicator_approx
 		self.prior_log_dist = prior_log_dist
 		self.prior_clamp = prior_clamp
-		self.hard_fwd = hard_fwd
 		self.exc_only = exc_only
 		super(ConfigPoisVAE, self).__init__(
 			**kwargs)
@@ -202,8 +200,6 @@ class ConfigPoisVAE(ConfigVAE):
 			str(self.prior_log_dist),
 			f"c({self.prior_clamp:0.2g})",
 		]
-		if self.hard_fwd:
-			special_name += ['hard']
 		if self.exc_only:
 			special_name += ['exc']
 		return '_'.join(special_name)

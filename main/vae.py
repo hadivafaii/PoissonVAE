@@ -85,11 +85,11 @@ class BaseVAE(Module):
 		var = dist.variance.flatten(start_dim=1)
 		# decoder weights
 		phi = self.fc_dec.get_weight()
-		a = phi.pow(2).sum(0)
+		gram_mat = phi.pow(2).sum(0)
 		# compute loss
 		mse = x - mu @ phi.T
 		mse = mse.pow(2).sum(1)
-		recon_batch = mse + var @ a
+		recon_batch = mse + var @ gram_mat
 		return recon_batch, dist, etc
 
 	def loss_kl(self, *args, **kwargs):
@@ -381,11 +381,11 @@ class PoissonVAE(BaseVAE):
 		)
 		self.update_n(200.0)
 
-	def forward(self, x, hard: bool = False):
+	def forward(self, x):
 		# infer
 		dist, log_dr = self.infer(x)
 		# sample
-		spks = dist.rsample(hard)
+		spks = dist.rsample()
 		# decode
 		y = self.decode(spks)
 		return dist, log_dr, spks, y
@@ -406,10 +406,11 @@ class PoissonVAE(BaseVAE):
 		if ablate is not None:
 			log_dr[:, ablate] = 0.0
 		dist = self.Dist(
-			log_rate=log_r + log_dr,
-			n_exp=self.n_exp,
-			temp=t,
+			log_rate=softclamp_upper(log_r + log_dr, 5.0),
 			indicator_approx=self.cfg.indicator_approx,
+			n_exp=self.n_exp,
+			n_exp_p=1e-3,
+			temp=t,
 		)
 		return dist, log_dr
 

@@ -342,19 +342,7 @@ class TrainerVAE(_BaseTrainerVAE):
 			# forward + loss
 			with torch.amp.autocast('cuda', enabled=self.cfg.use_amp):
 				self.model.update_t(self.temperatures[gstep])
-				if self.model.cfg.type == 'poisson':
-					annealing_is_done = (
-						min(self.temperatures) ==
-						self.temperatures[gstep]
-					)
-					hard = (
-						self.model.cfg.hard_fwd
-						and annealing_is_done
-					)
-					kws = dict(hard=hard)
-				else:
-					kws = {}
-				recon_batch, kl, dist = self._fun(x, **kws)
+				recon_batch, kl, dist = self._fun(x)
 				kl_batch = torch.sum(kl, dim=1)
 				kl_diag = torch.mean(kl, dim=0)
 
@@ -438,7 +426,6 @@ class TrainerVAE(_BaseTrainerVAE):
 				to_write.update({
 					'coeffs/r_max': r_max.avg,
 					'coeffs/n_exp': self.model.n_exp,
-					'coeffs/hard': int(hard),
 				})
 			to_write.update({
 				'train/loss_kl': torch.mean(kl_batch).item(),
@@ -488,11 +475,20 @@ class TrainerVAE(_BaseTrainerVAE):
 				for k, v in loss.items()
 			}
 
-			# sparsity analysis
-			lifetime, population, percents = sparse_score(
-				z=data['z'], cutoff=0.01)
+			# overall sparse coding performance
+			r2_score = max(0.0, float(np.mean(loss['r2'])))
+			portion_zeros = float(np.mean(data['z'] == 0))
+			overall_performance = np.sqrt(
+				(1 - r2_score) ** 2 +
+				(1 - portion_zeros) ** 2
+			) / np.sqrt(2.0)
+
+			# other sparsity metrics
+			lifetime, population, _ = sparse_score(
+				z=data['z'], cutoff=None)
 			to_write.update({
-				'sprs/%-zero': percents.get('0', np.nan),
+				'sprs/overall': overall_performance,
+				'sprs/portion_zeros': portion_zeros,
 				'sprs/lifetime': np.nanmean(lifetime),
 				'sprs/population': np.nanmean(population),
 			})
@@ -506,9 +502,9 @@ class TrainerVAE(_BaseTrainerVAE):
 					seed=self.model.cfg.seed,
 					sizes=[200, 1000],
 					n_iter=500 if (  # last epoch
-							gstep ==
-							self.cfg.epochs *
-							len(self.dl_trn)
+						gstep ==
+						self.cfg.epochs *
+						len(self.dl_trn)
 					) else 20,
 				)
 				for size, accuracy in df_summary['mean'].items():
@@ -593,7 +589,13 @@ class TrainerVAE(_BaseTrainerVAE):
 		x, y, z, g, r2, mse, kl, kl_diag = cat_map(
 			[x_all, y_all, z_all, g_all, r2, mse, kl, kl_diag])
 		data = {'x': x, 'y': y, 'z': z, 'g': g}
-		loss = {'r2': r2, 'mse': mse, 'kl': kl, 'kl_diag': kl_diag.mean(0)}
+		loss = {
+			'r2': r2,
+			'mse': mse,
+			'kl': kl,
+			'elbo': mse + kl,
+			'kl_diag': kl_diag.mean(0),
+		}
 		etc = {k: np.concatenate(v) for k, v in etc.items()}
 		return data, loss, etc
 
@@ -692,10 +694,10 @@ class TrainerVAE(_BaseTrainerVAE):
 		return
 
 	def _init_fun(self):
-		def _fun(x, **kwargs):
+		def _fun(x):
 			if self.model.cfg.type == 'poisson':
 				if self.cfg.method == 'mc':
-					dist, log_dr, z, y = self.model(x, **kwargs)
+					dist, log_dr, z, y = self.model(x)
 					recon_batch = self.model.loss_recon(y, x)
 				elif self.cfg.method == 'exact':
 					output = self.model.loss_recon_exact(x)
@@ -897,12 +899,6 @@ def _setup_args() -> argparse.Namespace:
 		help='soft indicator function',
 		default='sigmoid',
 		type=str,
-	)
-	parser.add_argument(
-		"--hard_fwd",
-		help='hard threshold?',
-		default=False,
-		type=true_fn,
 	)
 	parser.add_argument(
 		"--exc_only",
@@ -1164,7 +1160,8 @@ def _main():
 		print(args)
 		# vae.print()
 		msg = '\n'.join([
-			f"\n{vae.cfg.name()}",
+			f"\ntotal num iters: {tr.n_iters}",
+			f"{vae.cfg.name()}",
 			f"{tr.cfg.name()}_({vae.timestamp})\n",
 		])
 		print(msg)
