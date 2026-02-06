@@ -22,7 +22,6 @@ def _get_git_root() -> Optional[str]:
 		return None
 
 
-
 class BaseTrainer(object):
 	def __init__(
 			self,
@@ -96,9 +95,6 @@ class BaseTrainer(object):
 				level=logging.WARNING,
 			)
 
-		if self.cfg.scheduler_type == 'cosine' and fresh_fit:
-			self.optim_schedule.T_max *= len(self.dl_trn)
-
 		self.pbar = tqdm(
 			iterable=epochs,
 			dynamic_ncols=True,
@@ -153,7 +149,7 @@ class BaseTrainer(object):
 		self.wandb_run = wandb.init(
 			project=getattr(self.cfg, 'wandb_project', 'PoissonVAE'),
 			entity=getattr(self.cfg, 'wandb_entity', None),
-			name=fit_name,
+			name=f"{self.model.cfg.name()}/{fit_name}",
 			config=run_config,
 			dir=self.model.cfg.runs_dir if
 			hasattr(self.model.cfg, 'runs_dir')
@@ -277,6 +273,8 @@ class BaseTrainer(object):
 			self.optim = torch.optim.AdamW(**kws)
 		elif self.cfg.optimizer == 'radam':
 			self.optim = torch.optim.RAdam(**kws)
+		elif self.cfg.optimizer == 'sgd':
+			self.optim = torch.optim.SGD(**kws)
 		else:
 			raise NotImplementedError(self.cfg.optimizer)
 
@@ -284,6 +282,9 @@ class BaseTrainer(object):
 		if self.cfg.scheduler_type == 'cosine':
 			self.optim_schedule = torch.optim.lr_scheduler.CosineAnnealingLR(
 				self.optim, **self.cfg.scheduler_kws)
+			total_steps = self.cfg.epochs * len(self.dl_trn)
+			warmup_steps = total_steps * self.cfg.warmup_portion
+			self.optim_schedule.T_max = total_steps - warmup_steps
 		elif self.cfg.scheduler_type == 'exponential':
 			self.optim_schedule = torch.optim.lr_scheduler.ExponentialLR(
 				self.optim, **self.cfg.scheduler_kws)

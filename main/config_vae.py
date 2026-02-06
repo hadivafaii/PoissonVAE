@@ -8,11 +8,13 @@ DATA_CHOICES = [
 	'vH16', 'CIFAR16',
 	'MNIST', 'EMNIST',
 	'FashionMNIST', 'CIFAR10',
-	'BALLS16', 'BALLS64',
 ]
 
 
 class ConfigVAE(BaseConfig):
+	@validate_choices(DATA_CHOICES, 'dataset')
+	@validate_choices(_ARCHI_CHOICES, 'enc_type')
+	@validate_choices(_ARCHI_CHOICES, 'dec_type')
 	def __init__(
 			self,
 			dataset: str,
@@ -58,12 +60,6 @@ class ConfigVAE(BaseConfig):
 		:param use_se: Squeeze&Excite?
 		:param kwargs:
 		"""
-		assert dataset in DATA_CHOICES, \
-			f"allowed datasets:\n{DATA_CHOICES}"
-		assert enc_type in _ARCHI_CHOICES, \
-			f"allowed architectures:\n{_ARCHI_CHOICES}"
-		assert dec_type in _ARCHI_CHOICES, \
-			f"allowed architectures:\n{_ARCHI_CHOICES}"
 
 		self.enc_type = enc_type
 		self.dec_type = dec_type
@@ -266,6 +262,8 @@ class ConfigLapVAE(ConfigContVAE):
 
 
 class ConfigTrainVAE(BaseConfigTrain):
+	@validate_choices(METHOD_CHOICES, 'method')
+	@validate_choices(T_ANNEAL_CHOICES, 'temp_anneal_type')
 	def __init__(
 			self,
 			method: str = 'mc',
@@ -304,12 +302,9 @@ class ConfigTrainVAE(BaseConfigTrain):
 			epochs=1200,
 			batch_size=200,
 			warm_restart=0,
-			warmup_epochs=5,
+			warmup_portion=0.01,
 			optimizer='adamax_fast',
-			optimizer_kws={
-				'weight_decay': 0.0},
 			scheduler_type='cosine',
-			scheduler_kws=None,
 			grad_clip=500,
 			chkpt_freq=50,
 			eval_freq=20,
@@ -317,12 +312,10 @@ class ConfigTrainVAE(BaseConfigTrain):
 		)
 		kwargs = setup_kwargs(defaults, kwargs)
 		super(ConfigTrainVAE, self).__init__(**kwargs)
+		self.set_optim_kws()  # reset optim kws
+		self.set_scheduler_kws()  # reset scheduler kws
 		assert 0.0 <= kl_anneal_portion <= 1.0
 		assert 0.0 <= temp_anneal_portion <= 1.0
-		assert temp_anneal_type in T_ANNEAL_CHOICES, \
-			f"allowed t annealers:\n{T_ANNEAL_CHOICES}"
-		assert method in METHOD_CHOICES, \
-			f"allowed grad estim methods:\n{METHOD_CHOICES}"
 
 		self.method = method
 
@@ -434,14 +427,13 @@ def default_configs(
 	########################
 	# trainer cfgs
 	########################
-	if dataset in ['vH16', 'CIFAR16', 'BALLS16', 'BALLS64']:
+	if dataset in ['vH16', 'CIFAR16']:
 		cfg_tr = dict(
 			**cfg_tr,
 			lr=0.005,
 			batch_size=1000,
 			epochs=3000 if dataset == 'vH16' else 1500,
-			optimizer_kws={'weight_decay': 0.0},
-			grad_clip=500,
+			grad_clip=None,
 		)
 
 	elif dataset.endswith('MNIST'):
@@ -454,7 +446,6 @@ def default_configs(
 			epochs=epochs,
 			batch_size=100,
 			warm_restart=0,
-			optimizer_kws={'weight_decay': 3e-4},
 			grad_clip=1000,
 		)
 

@@ -1,6 +1,6 @@
 from utils.generic import *
 _SCHEDULER_CHOICES = ['cosine', 'exponential', 'step', 'cyclic', None]
-_OPTIM_CHOICES = ['adamax', 'adam', 'adamw', 'radam', 'sgd', 'adamax_fast']
+_OPTIM_CHOICES = ['adamax_fast', 'adamax', 'adam', 'adamw', 'radam', 'sgd']
 
 
 class BaseConfig(object):
@@ -64,17 +64,17 @@ class BaseConfig(object):
 
 
 class BaseConfigTrain(object):
+	@validate_choices(_SCHEDULER_CHOICES, 'scheduler_type')
+	@validate_choices(_OPTIM_CHOICES, 'optimizer')
 	def __init__(
 			self,
 			lr: float,
 			epochs: int,
 			batch_size: int,
 			warm_restart: int,
-			warmup_epochs: int,
+			warmup_portion: float,
 			optimizer: str,
-			optimizer_kws: dict,
 			scheduler_type: str,
-			scheduler_kws: dict,
 			ema_rate: float = None,
 			grad_clip: float = 1000,
 			use_amp: bool = False,
@@ -83,21 +83,23 @@ class BaseConfigTrain(object):
 			log_freq: int = 20,
 	):
 		super(BaseConfigTrain, self).__init__()
+		assert warm_restart >= 0
+		assert warmup_portion >= 0.0
+
 		self.lr = lr
 		self.epochs = epochs
 		self.batch_size = batch_size
-		assert warm_restart >= 0
-		assert warmup_epochs >= 0
+
 		self.warm_restart = warm_restart
-		self.warmup_epochs = warmup_epochs
-		assert optimizer in _OPTIM_CHOICES, \
-			f"allowed optimizers:\n{_OPTIM_CHOICES}"
+		self.warmup_portion = warmup_portion
+
 		self.optimizer = optimizer
-		self._set_optim_kws(optimizer_kws)
-		assert scheduler_type in _SCHEDULER_CHOICES, \
-			f"allowed schedulers:\n{_SCHEDULER_CHOICES}"
 		self.scheduler_type = scheduler_type
-		self._set_scheduler_kws(scheduler_kws)
+		self.optimizer_kws = None
+		self.scheduler_kws = None
+		self.set_optim_kws()
+		self.set_scheduler_kws()
+
 		self.ema_rate = ema_rate
 		self.grad_clip = grad_clip
 		self.chkpt_freq = chkpt_freq
@@ -114,29 +116,36 @@ class BaseConfigTrain(object):
 	def _save(self, save_dir: str, **kwargs):
 		_save_config(self, save_dir, **kwargs)
 
-	def _set_optim_kws(self, kws):
-		defaults = {
-			'betas': (0.9, 0.999),
-			'weight_decay': 3e-4,
-			'eps': 1e-8,
-		}
-		kws = setup_kwargs(defaults, kws)
-		self.optimizer_kws = kws
+	def set_optim_kws(self, **kwargs):
+		if self.optimizer == 'sgd':
+			defaults = {
+				'momentum': 0.9,
+				'weight_decay': 0.0,
+				'nesterov': True,
+			}
+		else:
+			defaults = {
+				'betas': (0.9, 0.999),
+				'weight_decay': 0.0,
+				'eps': 1e-8,
+			}
+		self.optimizer_kws = setup_kwargs(
+			defaults=defaults, kwargs=kwargs)
 		return
 
-	def _set_scheduler_kws(self, kws):
-		lr_min = 1e-5
-		period = self.epochs - self.warmup_epochs
+	def set_scheduler_kws(self, **kwargs):
+		eta_min = 1e-5
+		period = self.epochs * (1 - self.warmup_portion)
 		period /= (2 * self.warm_restart + 1)
 		if self.scheduler_type == 'cosine':
 			defaults = {
 				'T_max': period,
-				'eta_min': lr_min,
+				'eta_min': eta_min,
 			}
 		elif self.scheduler_type == 'exponential':
 			defaults = {
 				'gamma': 0.9,
-				'eta_min': lr_min,
+				'eta_min': eta_min,
 			}
 		elif self.scheduler_type == 'step':
 			defaults = {
@@ -146,16 +155,18 @@ class BaseConfigTrain(object):
 		elif self.scheduler_type == 'cyclic':
 			defaults = {
 				'max_lr': self.lr,
-				'base_lr': lr_min,
+				'base_lr': eta_min,
 				'mode': 'exp_range',
 				'step_size_up': period,
 				'step_size': 10,
 				'gamma': 0.9,
 			}
+		elif self.scheduler_type is None:
+			defaults = {}
 		else:
 			raise NotImplementedError(self.scheduler_type)
-		kws = setup_kwargs(defaults, kws)
-		self.scheduler_kws = kws
+		self.scheduler_kws = setup_kwargs(
+			defaults=defaults, kwargs=kwargs)
 		return
 
 

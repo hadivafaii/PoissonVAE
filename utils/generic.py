@@ -149,6 +149,27 @@ def get_all_init_params(cls: Callable):
 	return init_params
 
 
+def validate_choices(choices: List[str], param_name: str):
+	def decorator(func: Callable):
+		@functools.wraps(func)
+		def wrapper(self, *args, **kwargs):
+			# get the actual value that will be used
+			# (either from kwargs or default)
+			sig = inspect.signature(func)
+			bound_args = sig.bind(self, *args, **kwargs)
+			bound_args.apply_defaults()
+			value = bound_args.arguments[param_name]
+
+			if value not in choices:
+				raise ValueError(
+					f"Invalid {param_name}: '{value}'.  "
+					f"Allowed values:\n{choices}"
+				)
+			return func(self, *args, **kwargs)
+		return wrapper
+	return decorator
+
+
 def filter_kwargs(
 		fn: Callable,
 		kw: dict = None, ):

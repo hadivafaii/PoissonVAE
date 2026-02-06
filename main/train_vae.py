@@ -325,12 +325,13 @@ class TrainerVAE(_BaseTrainerVAE):
 
 		for i, (x, *_) in enumerate(self.dl_trn):
 			gstep = epoch * len(self.dl_trn) + i
-			# warm-up lr
-			if epoch < self.cfg.warmup_epochs:
+			# warm-up lr?
+			progress = gstep / self.n_iters
+			is_warming_up = progress < self.cfg.warmup_portion
+			if is_warming_up:
 				lr = (
-					self.cfg.lr * gstep /
-					self.cfg.warmup_epochs /
-					len(self.dl_trn)
+					self.cfg.lr * progress /
+					self.cfg.warmup_portion
 				)
 				for param_group in self.optim.param_groups:
 					param_group['lr'] = lr
@@ -362,7 +363,7 @@ class TrainerVAE(_BaseTrainerVAE):
 			self.scaler.unscale_(self.optim)
 			# clip grad
 			if self.cfg.grad_clip is not None:
-				if epoch < self.cfg.warmup_epochs:
+				if is_warming_up:
 					max_norm = self.cfg.grad_clip * 3
 				else:
 					max_norm = self.cfg.grad_clip
@@ -392,8 +393,8 @@ class TrainerVAE(_BaseTrainerVAE):
 			self.update_ema()
 			# optim schedule
 			cond_schedule = (
-					epoch >= self.cfg.warmup_epochs
-					and self.optim_schedule is not None
+				not is_warming_up and
+				self.optim_schedule is not None
 			)
 			if cond_schedule:
 				self.optim_schedule.step()
@@ -951,14 +952,14 @@ def _setup_args() -> argparse.Namespace:
 	parser.add_argument(
 		"--warm_restart",
 		help='# warm restarts',
-		default='__placeholder__',
-		type=lambda v: placeholder_fn(v, int),
+		default=0,
+		type=int,
 	)
 	parser.add_argument(
-		"--warmup_epochs",
-		help='warmup epochs',
-		default=5,
-		type=int,
+		"--warmup_portion",
+		help='warmup portion',
+		default=0.01,
+		type=float,
 	)
 	parser.add_argument(
 		"--optimizer",

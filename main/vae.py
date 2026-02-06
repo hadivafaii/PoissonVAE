@@ -86,8 +86,8 @@ class BaseVAE(Module):
 		# decoder weights
 		phi = self.fc_dec.get_weight()
 		gram_mat = phi.pow(2).sum(0)
-		# compute loss
-		mse = x - mu @ phi.T
+
+		mse = x.flatten(start_dim=1) - mu @ phi.T
 		mse = mse.pow(2).sum(1)
 		recon_batch = mse + var @ gram_mat
 		return recon_batch, dist, etc
